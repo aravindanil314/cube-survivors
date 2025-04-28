@@ -42,31 +42,132 @@ export class PlayerCharacter {
 	private createMesh(): THREE.Group {
 		const group = new THREE.Group();
 
-		// Body - blue cube
-		const bodyGeometry = new THREE.BoxGeometry(1, 1, 1);
-		const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x3498db });
+		// Main body - create a cosmic core with glowing effect
+		const bodyGeometry = new THREE.IcosahedronGeometry(0.5, 1);
+		const bodyMaterial = new THREE.MeshStandardMaterial({
+			color: 0x4facfe,
+			emissive: 0x0066cc,
+			emissiveIntensity: 0.5,
+			metalness: 0.8,
+			roughness: 0.2
+		});
 		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
 		body.position.y = 0.5;
 		body.castShadow = true;
+
+		// Add subtle rotation animation to body
+		body.userData.rotationSpeed = 0.5;
 		group.add(body);
 
-		// Head - smaller red cube on top
-		const headGeometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-		const headMaterial = new THREE.MeshStandardMaterial({ color: 0xe74c3c });
-		const head = new THREE.Mesh(headGeometry, headMaterial);
-		head.position.y = 1.3;
-		head.castShadow = true;
-		group.add(head);
+		// Add a glow effect around the body
+		const glowGeometry = new THREE.SphereGeometry(0.55, 32, 32);
+		const glowMaterial = new THREE.MeshBasicMaterial({
+			color: 0x00f2fe,
+			transparent: true,
+			opacity: 0.4,
+			side: THREE.BackSide
+		});
+		const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+		glow.position.y = 0.5;
+		group.add(glow);
 
-		// Add direction indicator (small cylinder pointing forward)
-		const directionGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.5);
-		const directionMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+		// Orbital ring around the player
+		const ringGeometry = new THREE.TorusGeometry(0.8, 0.05, 16, 32);
+		const ringMaterial = new THREE.MeshStandardMaterial({
+			color: 0x4facfe,
+			emissive: 0x00f2fe,
+			emissiveIntensity: 0.5,
+			transparent: true,
+			opacity: 0.7
+		});
+		const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring.rotation.x = Math.PI / 2;
+		ring.position.y = 0.5;
+		// Add subtle rotation to ring
+		ring.userData.rotationSpeed = 0.8;
+		group.add(ring);
+
+		// Add orbital particle effects - small spheres orbiting the player
+		const orbCount = 3;
+		for (let i = 0; i < orbCount; i++) {
+			// Create a small glowing sphere
+			const orbGeometry = new THREE.SphereGeometry(0.12, 16, 16);
+			const orbMaterial = new THREE.MeshStandardMaterial({
+				color: i % 2 === 0 ? 0x00f2fe : 0x4facfe,
+				emissive: i % 2 === 0 ? 0x00f2fe : 0x4facfe,
+				emissiveIntensity: 0.8,
+				metalness: 0.9,
+				roughness: 0.1
+			});
+
+			const orb = new THREE.Mesh(orbGeometry, orbMaterial);
+			// Position orbs in a circle around the player
+			const angle = (i / orbCount) * Math.PI * 2;
+			orb.position.set(Math.cos(angle) * 0.8, 0.5, Math.sin(angle) * 0.8);
+
+			// Store the initial angle for animation
+			orb.userData.angle = angle;
+			orb.userData.orbitSpeed = 1.2 + i * 0.4; // Different speeds for each orb
+			orb.userData.orbitRadius = 0.8;
+			orb.userData.orbitHeight = 0.5;
+
+			group.add(orb);
+
+			// Add a small point light to each orb for glow effect
+			const orbLight = new THREE.PointLight(i % 2 === 0 ? 0x00f2fe : 0x4facfe, 0.5, 1.0);
+			orbLight.position.copy(orb.position);
+			orb.add(orbLight);
+		}
+
+		// Add a direction indicator (beam of light)
+		const directionGeometry = new THREE.ConeGeometry(0.1, 0.6, 8);
+		const directionMaterial = new THREE.MeshStandardMaterial({
+			color: 0xffffff,
+			emissive: 0x00f2fe,
+			emissiveIntensity: 0.8,
+			transparent: true,
+			opacity: 0.8
+		});
 		const direction = new THREE.Mesh(directionGeometry, directionMaterial);
 		direction.rotation.x = Math.PI / 2;
-		direction.position.set(0, 0.5, 0.75);
+		direction.position.set(0, 0.5, 0.9);
 		group.add(direction);
 
 		return group;
+	}
+
+	// Add a method to animate the cosmic effects
+	private animateCosmicEffects(delta: number): void {
+		if (!this.mesh) return;
+
+		// Animate core body rotation
+		const body = this.mesh.children[0] as THREE.Mesh;
+		if (body.userData.rotationSpeed) {
+			body.rotation.y += delta * body.userData.rotationSpeed;
+			body.rotation.x += delta * body.userData.rotationSpeed * 0.7;
+		}
+
+		// Animate orbital ring
+		const ring = this.mesh.children[2] as THREE.Mesh;
+		if (ring.userData.rotationSpeed) {
+			ring.rotation.z += delta * ring.userData.rotationSpeed;
+		}
+
+		// Animate orbiting particles
+		for (let i = 3; i < this.mesh.children.length - 1; i++) {
+			const orb = this.mesh.children[i] as THREE.Mesh;
+			if (orb.userData.orbitSpeed) {
+				// Update the angle
+				orb.userData.angle += delta * orb.userData.orbitSpeed;
+
+				// Calculate new position
+				orb.position.x = Math.cos(orb.userData.angle) * orb.userData.orbitRadius;
+				orb.position.z = Math.sin(orb.userData.angle) * orb.userData.orbitRadius;
+
+				// Add some up/down movement
+				orb.position.y = orb.userData.orbitHeight + Math.sin(orb.userData.angle * 2) * 0.1;
+			}
+		}
 	}
 
 	public update(delta: number, movement: { x: number; z: number }): void {
@@ -75,10 +176,11 @@ export class PlayerCharacter {
 			this.invulnerableTimer -= delta;
 			if (this.invulnerableTimer <= 0) {
 				this.isInvulnerable = false;
-				// Reset body color
+				// Reset body color - now using the cosmic theme colors
 				const bodyMesh = this.mesh.children[0] as THREE.Mesh;
 				const bodyMaterial = bodyMesh.material as THREE.MeshStandardMaterial;
-				bodyMaterial.color.set(0x3498db);
+				bodyMaterial.color.set(0x4facfe);
+				bodyMaterial.emissive.set(0x0066cc);
 			}
 		}
 
@@ -95,6 +197,9 @@ export class PlayerCharacter {
 			const angle = Math.atan2(movement.x, movement.z);
 			this.mesh.rotation.y = angle;
 		}
+
+		// Animate cosmic effects
+		this.animateCosmicEffects(delta);
 
 		// Update weapon
 		this.weapon.update(delta);
@@ -139,10 +244,12 @@ export class PlayerCharacter {
 		this.isInvulnerable = true;
 		this.invulnerableTimer = this.invulnerableTime;
 
-		// Flash the player white when taking damage
+		// Flash the player white/red when taking damage
 		const bodyMesh = this.mesh.children[0] as THREE.Mesh;
 		const bodyMaterial = bodyMesh.material as THREE.MeshStandardMaterial;
-		bodyMaterial.color.set(0xffffff);
+		bodyMaterial.color.set(0xff3333);
+		bodyMaterial.emissive.set(0xff0000);
+		bodyMaterial.emissiveIntensity = 1.0;
 
 		// Set isDead if health is zero
 		if (this.health <= 0) {

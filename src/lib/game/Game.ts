@@ -23,7 +23,7 @@ export class Game {
 	private isPaused: boolean = false;
 	private boundarySize: number = 20;
 	private currentWave: number = 1;
-	private particles: THREE.Points[] = [];
+	private particles: THREE.Object3D[] = [];
 	private touchMovement: { x: number; z: number } = { x: 0, z: 0 };
 	private isMobile: boolean = false;
 
@@ -59,6 +59,11 @@ export class Game {
 			this.togglePause();
 		});
 
+		// Listen for exit game event from pause menu
+		document.addEventListener('exit-game', () => {
+			this.exitGame();
+		});
+
 		// Listen for touch movement events from the virtual joystick
 		document.addEventListener('touch-move', ((e: Event) => {
 			// Cast Event to CustomEvent to access detail property
@@ -74,9 +79,9 @@ export class Game {
 	}
 
 	private init(): void {
-		// Create scene with a slightly blue-tinted background
-		this.scene.background = new THREE.Color(0x0a0a1a);
-		this.scene.fog = new THREE.FogExp2(0x0a0a1a, 0.035);
+		// Create scene with a deep space background
+		this.scene.background = new THREE.Color(0x050510);
+		this.scene.fog = new THREE.FogExp2(0x050510, 0.02);
 
 		// Camera - orthographic for top-down view
 		const aspectRatio = this.container.clientWidth / this.container.clientHeight;
@@ -125,53 +130,99 @@ export class Game {
 		pointLight.position.set(0, 5, 0);
 		this.scene.add(pointLight);
 
-		// Create enhanced floor with grid texture
-		const gridSize = 50;
-		const gridDivisions = 50;
+		// Create a much larger cosmic floor
+		const floorSize = 200; // Much larger than the play area
+		const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize, 32, 32);
 
-		// Create a more vibrant grid with glowing lines
-		const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x4444bb, 0x222266);
-		gridHelper.position.y = 0.01; // Slightly above floor to prevent z-fighting
-		this.scene.add(gridHelper);
-
-		// Create floor with gradient texture
-		const floorGeometry = new THREE.PlaneGeometry(gridSize, gridSize, 32, 32);
-
-		// Create radial gradient texture
+		// Create cosmic texture
 		const floorCanvas = document.createElement('canvas');
-		floorCanvas.width = 1024;
-		floorCanvas.height = 1024;
+		floorCanvas.width = 2048;
+		floorCanvas.height = 2048;
 		const floorCtx = floorCanvas.getContext('2d');
 
 		if (floorCtx) {
-			// Create radial gradient
-			const gradient = floorCtx.createRadialGradient(
-				512,
-				512,
-				0, // Inner circle (x, y, radius)
-				512,
-				512,
-				512 // Outer circle (x, y, radius)
-			);
+			// Fill with deep space color
+			floorCtx.fillStyle = '#050510';
+			floorCtx.fillRect(0, 0, 2048, 2048);
 
-			// Add gradient colors - deep blue to darker blue
-			gradient.addColorStop(0, '#202060');
-			gradient.addColorStop(0.5, '#151540');
-			gradient.addColorStop(1, '#090920');
+			// Create a field of stars with different sizes and colors
+			for (let i = 0; i < 3000; i++) {
+				const x = Math.random() * 2048;
+				const y = Math.random() * 2048;
+				const size = Math.random() * 2 + 0.5;
 
-			// Fill with gradient
-			floorCtx.fillStyle = gradient;
-			floorCtx.fillRect(0, 0, 1024, 1024);
+				// Determine the star brightness/color
+				const brightness = Math.random();
+				let color;
 
-			// Add some noise for texture
-			floorCtx.globalAlpha = 0.1;
-			for (let i = 0; i < 20000; i++) {
-				const x = Math.random() * 1024;
-				const y = Math.random() * 1024;
-				const size = Math.random() * 2 + 1;
-				floorCtx.globalAlpha = Math.random() * 0.15;
-				floorCtx.fillStyle = Math.random() > 0.5 ? '#ffffff' : '#3333ff';
-				floorCtx.fillRect(x, y, size, size);
+				if (brightness > 0.98) {
+					// Brightest stars with a slight color tint
+					const hue = Math.random() * 60 - 30 + (Math.random() > 0.5 ? 0 : 180); // Blues and yellows
+					color = `hsla(${hue}, 80%, 90%, 0.9)`;
+				} else if (brightness > 0.9) {
+					// Bright white stars
+					color = `rgba(255, 255, 255, ${0.7 + Math.random() * 0.3})`;
+				} else {
+					// Dimmer stars in blue/white tones
+					const alpha = 0.2 + Math.random() * 0.5;
+					color =
+						Math.random() > 0.3 ? `rgba(220, 225, 255, ${alpha})` : `rgba(180, 190, 255, ${alpha})`;
+				}
+
+				// Create a glowing effect for stars
+				const glow = Math.random() > 0.8;
+
+				if (glow) {
+					const radius = size * (2 + Math.random() * 4);
+					const gradient = floorCtx.createRadialGradient(x, y, 0, x, y, radius);
+					gradient.addColorStop(0, color);
+					gradient.addColorStop(1, 'rgba(0, 0, 50, 0)');
+
+					floorCtx.beginPath();
+					floorCtx.fillStyle = gradient;
+					floorCtx.arc(x, y, radius, 0, Math.PI * 2);
+					floorCtx.fill();
+				}
+
+				// Draw the star
+				floorCtx.beginPath();
+				floorCtx.fillStyle = color;
+				floorCtx.arc(x, y, size, 0, Math.PI * 2);
+				floorCtx.fill();
+			}
+
+			// Add a few larger nebula-like features
+			for (let i = 0; i < 5; i++) {
+				const x = Math.random() * 2048;
+				const y = Math.random() * 2048;
+				const radius = 150 + Math.random() * 350;
+
+				// Create a colorful nebula
+				const nebulaType = Math.floor(Math.random() * 3);
+				let color1, color2;
+
+				if (nebulaType === 0) {
+					// Blueish nebula
+					color1 = 'rgba(30, 50, 180, 0.05)';
+					color2 = 'rgba(0, 10, 40, 0)';
+				} else if (nebulaType === 1) {
+					// Reddish nebula
+					color1 = 'rgba(180, 30, 80, 0.04)';
+					color2 = 'rgba(40, 0, 20, 0)';
+				} else {
+					// Greenish/teal nebula
+					color1 = 'rgba(30, 180, 150, 0.04)';
+					color2 = 'rgba(0, 40, 40, 0)';
+				}
+
+				const gradient = floorCtx.createRadialGradient(x, y, 0, x, y, radius);
+				gradient.addColorStop(0, color1);
+				gradient.addColorStop(1, color2);
+
+				floorCtx.beginPath();
+				floorCtx.fillStyle = gradient;
+				floorCtx.arc(x, y, radius, 0, Math.PI * 2);
+				floorCtx.fill();
 			}
 		}
 
@@ -179,12 +230,13 @@ export class Game {
 		const floorTexture = new THREE.CanvasTexture(floorCanvas);
 		floorTexture.wrapS = THREE.RepeatWrapping;
 		floorTexture.wrapT = THREE.RepeatWrapping;
+		floorTexture.repeat.set(3, 3); // Repeat the texture for more stars
 
 		// Create floor material with the texture
 		const floorMaterial = new THREE.MeshStandardMaterial({
 			map: floorTexture,
 			roughness: 0.7,
-			metalness: 0.3,
+			metalness: 0.2,
 			color: 0xffffff
 		});
 
@@ -269,93 +321,75 @@ export class Game {
 	}
 
 	private createBoundaryMarkers(size: number): void {
-		// Create more attractive boundary markers
-		// Create glowing boundary edge
-		const edgeGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(size * 2, 1, size * 2));
+		// Create a simple square boundary line with a glow effect
 
-		const edgeMaterial = new THREE.LineBasicMaterial({
-			color: 0x33ccff,
+		// Create square outline using line segments
+		const squarePoints = [
+			new THREE.Vector3(-size, 0.05, -size),
+			new THREE.Vector3(size, 0.05, -size),
+			new THREE.Vector3(size, 0.05, size),
+			new THREE.Vector3(-size, 0.05, size),
+			new THREE.Vector3(-size, 0.05, -size)
+		];
+
+		// Create the main geometry for the boundary line
+		const lineGeometry = new THREE.BufferGeometry().setFromPoints(squarePoints);
+		const lineMaterial = new THREE.LineBasicMaterial({
+			color: 0x4facfe,
 			transparent: true,
-			opacity: 0.6,
+			opacity: 0.8,
+			linewidth: 2
+		});
+
+		const boundaryLine = new THREE.Line(lineGeometry, lineMaterial);
+		this.scene.add(boundaryLine);
+
+		// Create a wider, more transparent line for the glow effect
+		const glowMaterial = new THREE.LineBasicMaterial({
+			color: 0x00f2fe,
+			transparent: true,
+			opacity: 0.4,
 			linewidth: 1
 		});
 
-		const boundaryEdges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-		boundaryEdges.position.y = 0.5;
-		this.scene.add(boundaryEdges);
+		const glowLine = new THREE.Line(lineGeometry, glowMaterial);
+		glowLine.scale.set(1.01, 1, 1.01); // Slightly larger
+		this.scene.add(glowLine);
 
-		// Create corner pillars
-		const pillarGeometry = new THREE.CylinderGeometry(0.3, 0.3, 3, 8);
-		const pillarMaterial = new THREE.MeshStandardMaterial({
-			color: 0x3388ff,
-			emissive: 0x1144aa,
-			metalness: 0.8,
-			roughness: 0.2
-		});
+		// Create a pulsing effect for the glow
+		glowLine.userData.creationTime = this.gameTime;
+		this.particles.push(glowLine);
 
-		// Place pillars at corners
-		const positions = [
-			[size, 0, size],
+		// Add small corner markers at the four corners
+		const cornerPositions = [
+			[-size, 0, -size],
 			[size, 0, -size],
-			[-size, 0, size],
-			[-size, 0, -size]
+			[size, 0, size],
+			[-size, 0, size]
 		];
 
-		positions.forEach((pos) => {
-			const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-			pillar.position.set(pos[0], 1.5, pos[2]);
-			pillar.castShadow = true;
-			this.scene.add(pillar);
+		cornerPositions.forEach((pos) => {
+			// Add a small point light at each corner
+			const cornerLight = new THREE.PointLight(0x4facfe, 0.6, 3);
+			cornerLight.position.set(pos[0], 0.3, pos[2]);
+			cornerLight.userData.creationTime = this.gameTime;
+			this.scene.add(cornerLight);
+			this.particles.push(cornerLight);
 
-			// Add glowing ring at the top of each pillar
-			const ringGeometry = new THREE.TorusGeometry(0.5, 0.1, 8, 24);
-			const ringMaterial = new THREE.MeshBasicMaterial({
-				color: 0x00ffff,
+			// Add a small glowing marker at each corner
+			const markerGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+			const markerMaterial = new THREE.MeshBasicMaterial({
+				color: 0x4facfe,
 				transparent: true,
-				opacity: 0.8
+				opacity: 0.7
 			});
 
-			const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-			ring.position.set(pos[0], 3.2, pos[2]);
-			ring.rotation.x = Math.PI / 2;
-			this.scene.add(ring);
+			const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+			marker.position.set(pos[0], 0.1, pos[2]);
+			marker.userData.creationTime = this.gameTime;
+			this.scene.add(marker);
+			this.particles.push(marker);
 		});
-
-		// Create boundary walls with translucent force field effect
-		const wallHeight = 3;
-		const wallOpacity = 0.15;
-
-		// Create the four walls
-		const wallGeometry = new THREE.PlaneGeometry(size * 2, wallHeight);
-		const wallMaterial = new THREE.MeshBasicMaterial({
-			color: 0x33ccff,
-			transparent: true,
-			opacity: wallOpacity,
-			side: THREE.DoubleSide
-		});
-
-		// North wall
-		const northWall = new THREE.Mesh(wallGeometry, wallMaterial);
-		northWall.position.set(0, wallHeight / 2, size);
-		northWall.rotation.y = Math.PI;
-		this.scene.add(northWall);
-
-		// South wall
-		const southWall = new THREE.Mesh(wallGeometry, wallMaterial);
-		southWall.position.set(0, wallHeight / 2, -size);
-		this.scene.add(southWall);
-
-		// East wall
-		const eastWall = new THREE.Mesh(wallGeometry, wallMaterial);
-		eastWall.position.set(size, wallHeight / 2, 0);
-		eastWall.rotation.y = Math.PI / 2;
-		this.scene.add(eastWall);
-
-		// West wall
-		const westWall = new THREE.Mesh(wallGeometry, wallMaterial);
-		westWall.position.set(-size, wallHeight / 2, 0);
-		westWall.rotation.y = -Math.PI / 2;
-		this.scene.add(westWall);
 	}
 
 	private setupInputHandlers(): void {
@@ -489,22 +523,49 @@ export class Game {
 		}
 
 		// Update particle animations
-		this.particles.forEach((particleSystem) => {
-			const positions = particleSystem.geometry.attributes.position.array;
+		this.particles.forEach((object) => {
+			// Check if it's part of the boundary marker elements
+			if (object.userData.creationTime !== undefined) {
+				const timeSinceCreation = this.gameTime - object.userData.creationTime;
 
-			for (let i = 0; i < positions.length; i += 3) {
-				// Gentle floating motion
-				positions[i + 1] += Math.sin(this.gameTime + i) * 0.002;
+				// Handle different types of boundary elements
+				if (object instanceof THREE.Line) {
+					// Animate boundary line glow
+					const material = object.material as THREE.LineBasicMaterial;
+					material.opacity = 0.2 + Math.sin(timeSinceCreation * 1.5) * 0.3;
+				} else if (object instanceof THREE.PointLight) {
+					// Animate corner light intensity
+					object.intensity = 0.4 + Math.sin(timeSinceCreation * 2) * 0.3;
+				} else if (
+					object instanceof THREE.Mesh &&
+					object.geometry instanceof THREE.SphereGeometry
+				) {
+					// Animate corner marker opacity
+					const material = object.material as THREE.MeshBasicMaterial;
+					material.opacity = 0.4 + Math.sin(timeSinceCreation * 2) * 0.4;
+				} else if (object instanceof THREE.Mesh && object.geometry instanceof THREE.RingGeometry) {
+					// Backwards compatibility with any remaining ring geometries
+					const material = object.material as THREE.MeshBasicMaterial;
+					material.opacity = 0.2 + Math.sin(timeSinceCreation * 2) * 0.3;
+				}
+			} else if (object instanceof THREE.Points) {
+				// Handle regular particles (stars)
+				const positions = object.geometry.attributes.position.array;
 
-				// Reset particles that drift too high or too low
-				if (positions[i + 1] > 9) positions[i + 1] = 1;
-				if (positions[i + 1] < 0.5) positions[i + 1] = 8;
+				for (let i = 0; i < positions.length; i += 3) {
+					// Gentle floating motion
+					positions[i + 1] += Math.sin(this.gameTime + i) * 0.002;
+
+					// Reset particles that drift too high or too low
+					if (positions[i + 1] > 9) positions[i + 1] = 1;
+					if (positions[i + 1] < 0.5) positions[i + 1] = 8;
+				}
+
+				object.geometry.attributes.position.needsUpdate = true;
+
+				// Slowly rotate particle system
+				object.rotation.y += delta * 0.05;
 			}
-
-			particleSystem.geometry.attributes.position.needsUpdate = true;
-
-			// Slowly rotate particle system
-			particleSystem.rotation.y += delta * 0.05;
 		});
 
 		// Check if player is still alive or if game is won
@@ -530,18 +591,35 @@ export class Game {
 		this.renderer.render(this.scene, this.camera);
 	}
 
+	public exitGame(): void {
+		// Create and dispatch a custom event to exit back to the start page
+		const exitEvent = new CustomEvent('gameExit');
+		document.dispatchEvent(exitEvent);
+
+		// Clean up resources
+		this.cleanup();
+	}
+
 	public cleanup(): void {
+		// Stop the game loop
+		this.isPaused = true;
+		this.isGameOver = true;
+
 		// Remove event listeners
+		document.removeEventListener('resume-game', () => {});
+		document.removeEventListener('toggle-pause', () => {});
+		document.removeEventListener('exit-game', () => {});
+
+		// Remove the touch-move event listener
+		document.removeEventListener('touch-move', () => {});
+
+		// Remove input handlers
 		window.removeEventListener('resize', this.handleResize.bind(this));
 
-		// Remove all event listeners on game elements
-		window.removeEventListener('keydown', () => {});
-		window.removeEventListener('keyup', () => {});
-
-		// Clean up THREE.js resources
+		// Dispose of THREE.js resources
 		this.renderer.dispose();
 
-		// Remove the canvas from the DOM
+		// Remove canvas from container
 		if (this.renderer.domElement.parentNode) {
 			this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
 		}

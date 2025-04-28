@@ -128,25 +128,57 @@ export class MeleeEnemy extends Enemy {
 	protected createMesh(): THREE.Group {
 		const group = new THREE.Group();
 
-		// Enemy body - red cube
-		const bodyGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-		const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+		// Enemy body - red crystal structure
+		const bodyGeometry = new THREE.OctahedronGeometry(0.4, 1);
+		const bodyMaterial = new THREE.MeshStandardMaterial({
+			color: 0xff3333,
+			emissive: 0xaa0000,
+			emissiveIntensity: 0.7,
+			metalness: 0.7,
+			roughness: 0.3
+		});
 		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
 		body.position.y = 0.4;
 		body.castShadow = true;
 		group.add(body);
 
-		// Enemy "horns" - small cubes on top
-		const hornGeometry = new THREE.BoxGeometry(0.2, 0.4, 0.2);
-		const hornMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+		// Create a halo/aura around the enemy
+		const auraGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+		const auraMaterial = new THREE.MeshBasicMaterial({
+			color: 0xff3333,
+			transparent: true,
+			opacity: 0.3,
+			side: THREE.BackSide
+		});
+		const aura = new THREE.Mesh(auraGeometry, auraMaterial);
+		aura.position.y = 0.4;
+		group.add(aura);
 
-		const leftHorn = new THREE.Mesh(hornGeometry, hornMaterial);
-		leftHorn.position.set(-0.25, 0.8, 0);
-		group.add(leftHorn);
+		// Add sharp spikes on the enemy's body
+		const spikeCount = 4;
+		for (let i = 0; i < spikeCount; i++) {
+			const angle = (i / spikeCount) * Math.PI * 2;
+			const spikeGeometry = new THREE.ConeGeometry(0.08, 0.5, 4);
+			const spikeMaterial = new THREE.MeshStandardMaterial({
+				color: 0xff6666,
+				emissive: 0xff3333,
+				emissiveIntensity: 0.5
+			});
 
-		const rightHorn = new THREE.Mesh(hornGeometry, hornMaterial);
-		rightHorn.position.set(0.25, 0.8, 0);
-		group.add(rightHorn);
+			const spike = new THREE.Mesh(spikeGeometry, spikeMaterial);
+			// Position around the body
+			spike.position.set(Math.cos(angle) * 0.3, 0.4, Math.sin(angle) * 0.3);
+			// Rotate to point outward
+			spike.rotation.z = Math.PI / 2;
+			spike.rotation.y = -angle;
+
+			group.add(spike);
+		}
+
+		// Add a small red point light for glow effect
+		const light = new THREE.PointLight(0xff0000, 0.5, 2);
+		light.position.set(0, 0.4, 0);
+		group.add(light);
 
 		return group;
 	}
@@ -202,30 +234,84 @@ export class RangedEnemy extends Enemy {
 	protected createMesh(): THREE.Group {
 		const group = new THREE.Group();
 
-		// Enemy body - purple cube
-		const bodyGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+		// Enemy body - cosmic energy sphere
+		const bodyGeometry = new THREE.SphereGeometry(0.35, 16, 16);
 		const bodyMaterial = new THREE.MeshStandardMaterial({
 			color: 0x9933ff,
-			emissive: 0x440066,
-			emissiveIntensity: 0.3
+			emissive: 0x6600cc,
+			emissiveIntensity: 0.8,
+			metalness: 0.9,
+			roughness: 0.2,
+			transparent: true,
+			opacity: 0.9
 		});
 		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
 		body.position.y = 0.35;
 		body.castShadow = true;
 		group.add(body);
 
-		// Enemy "crown" - makes it look different from melee
-		const crownGeometry = new THREE.ConeGeometry(0.4, 0.5, 4);
-		const crownMaterial = new THREE.MeshStandardMaterial({
+		// Add energy rings around the body
+		const ringGeometry = new THREE.TorusGeometry(0.5, 0.04, 8, 24);
+		const ringMaterial = new THREE.MeshStandardMaterial({
 			color: 0xcc66ff,
-			emissive: 0x6600cc,
-			emissiveIntensity: 0.5
+			emissive: 0xaa33ff,
+			emissiveIntensity: 0.7,
+			transparent: true,
+			opacity: 0.7
 		});
 
-		const crown = new THREE.Mesh(crownGeometry, crownMaterial);
-		crown.position.set(0, 0.8, 0);
-		crown.rotation.y = Math.PI / 4; // Rotate to make it look like a diamond
-		group.add(crown);
+		// Create three rings in different orientations
+		const ring1 = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring1.position.y = 0.35;
+		group.add(ring1);
+
+		const ring2 = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring2.rotation.x = Math.PI / 2;
+		ring2.position.y = 0.35;
+		group.add(ring2);
+
+		const ring3 = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring3.rotation.z = Math.PI / 2;
+		ring3.position.y = 0.35;
+		group.add(ring3);
+
+		// Add small energy sparks around the enemy
+		for (let i = 0; i < 5; i++) {
+			const sparkGeometry = new THREE.SphereGeometry(0.06, 8, 8);
+			const sparkMaterial = new THREE.MeshBasicMaterial({
+				color: 0xcc66ff,
+				transparent: true,
+				opacity: 0.9
+			});
+
+			const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
+			// Position randomly around the body
+			const angle = Math.random() * Math.PI * 2;
+			const radius = 0.4 + Math.random() * 0.3;
+			spark.position.set(
+				Math.cos(angle) * radius,
+				0.35 + (Math.random() * 0.3 - 0.15),
+				Math.sin(angle) * radius
+			);
+
+			// Store animation data
+			spark.userData.angle = angle;
+			spark.userData.radius = radius;
+			spark.userData.speed = 1 + Math.random() * 2;
+			spark.userData.offset = Math.random() * Math.PI * 2;
+
+			group.add(spark);
+
+			// Add a small point light for each spark
+			const sparkLight = new THREE.PointLight(0xcc66ff, 0.3, 1);
+			sparkLight.position.copy(spark.position);
+			spark.add(sparkLight);
+		}
+
+		// Add a purple point light for overall glow
+		const light = new THREE.PointLight(0x9933ff, 0.7, 3);
+		light.position.set(0, 0.35, 0);
+		group.add(light);
 
 		return group;
 	}
@@ -365,6 +451,42 @@ export class RangedEnemy extends Enemy {
 		// Clean up projectiles when enemy dies
 		this.cleanup();
 	}
+
+	public update(delta: number): void {
+		if (this.isDead) return;
+
+		super.update(delta);
+
+		// Animate rings rotation
+		const rings = [
+			this.mesh.children[1] as THREE.Mesh,
+			this.mesh.children[2] as THREE.Mesh,
+			this.mesh.children[3] as THREE.Mesh
+		];
+
+		rings[0].rotation.z += delta * 0.8;
+		rings[1].rotation.y += delta * 0.6;
+		rings[2].rotation.x += delta * 0.7;
+
+		// Animate energy sparks
+		for (let i = 4; i < this.mesh.children.length - 1; i++) {
+			const spark = this.mesh.children[i] as THREE.Mesh;
+			if (spark.userData.speed) {
+				spark.userData.angle += delta * spark.userData.speed;
+
+				// Update position with a spiraling motion
+				spark.position.x = Math.cos(spark.userData.angle) * spark.userData.radius;
+				spark.position.z = Math.sin(spark.userData.angle) * spark.userData.radius;
+
+				// Add bobbing motion
+				spark.position.y = 0.35 + Math.sin(spark.userData.angle + spark.userData.offset) * 0.15;
+
+				// Pulsate size slightly
+				const scale = 0.8 + Math.sin(spark.userData.angle * 3) * 0.2;
+				spark.scale.set(scale, scale, scale);
+			}
+		}
+	}
 }
 
 export class BossEnemy extends Enemy {
@@ -390,62 +512,110 @@ export class BossEnemy extends Enemy {
 	protected createMesh(): THREE.Group {
 		const group = new THREE.Group();
 
-		// Boss body - large gold cube
-		const bodyGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+		// Boss body - complex crystalline structure
+		const bodyGeometry = new THREE.DodecahedronGeometry(0.8, 1);
 		const bodyMaterial = new THREE.MeshStandardMaterial({
 			color: 0xffcc00,
-			emissive: 0x996600,
-			emissiveIntensity: 0.5,
-			metalness: 0.8,
-			roughness: 0.2
-		});
-		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-		body.position.y = 0.75;
-		body.castShadow = true;
-		group.add(body);
-
-		// Boss crown
-		const crownGeometry = new THREE.ConeGeometry(0.8, 1.0, 6);
-		const crownMaterial = new THREE.MeshStandardMaterial({
-			color: 0xff6600,
-			emissive: 0xff3300,
-			emissiveIntensity: 0.5,
+			emissive: 0xff6600,
+			emissiveIntensity: 0.6,
 			metalness: 0.9,
 			roughness: 0.1
 		});
+		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+		body.position.y = 0.8;
+		body.castShadow = true;
+		group.add(body);
 
-		const crown = new THREE.Mesh(crownGeometry, crownMaterial);
-		crown.position.set(0, 1.8, 0);
-		group.add(crown);
+		// Add energy core in the center
+		const coreGeometry = new THREE.SphereGeometry(0.4, 24, 24);
+		const coreMaterial = new THREE.MeshStandardMaterial({
+			color: 0xffffff,
+			emissive: 0xffff00,
+			emissiveIntensity: 1.0,
+			transparent: true,
+			opacity: 0.9
+		});
+
+		const core = new THREE.Mesh(coreGeometry, coreMaterial);
+		core.position.y = 0.8;
+		group.add(core);
+
+		// Add a point light in the core
+		const coreLight = new THREE.PointLight(0xffff00, 1.5, 8);
+		coreLight.position.set(0, 0.8, 0);
+		group.add(coreLight);
 
 		// Add floating orbs around the boss
 		for (let i = 0; i < 4; i++) {
 			const angle = (i / 4) * Math.PI * 2;
 			const orbGeometry = new THREE.SphereGeometry(0.3, 16, 16);
-			const orbMaterial = new THREE.MeshPhongMaterial({
-				color: 0xff0000,
-				emissive: 0xff0000,
-				emissiveIntensity: 1.0
+			const orbMaterial = new THREE.MeshStandardMaterial({
+				color: 0xff3300,
+				emissive: 0xff3300,
+				emissiveIntensity: 0.8,
+				transparent: true,
+				opacity: 0.9
 			});
 
 			const orb = new THREE.Mesh(orbGeometry, orbMaterial);
-			orb.position.set(Math.cos(angle) * 1.2, 1.0, Math.sin(angle) * 1.2);
+			orb.position.set(Math.cos(angle) * 1.2, 0.8, Math.sin(angle) * 1.2);
 			group.add(orb);
+
+			// Add a point light to each orb
+			const orbLight = new THREE.PointLight(0xff3300, 0.8, 3);
+			orb.add(orbLight);
 		}
 
-		// Add visual indicator for phases
-		const indicatorGeometry = new THREE.RingGeometry(1.8, 2.0, 32);
-		const indicatorMaterial = new THREE.MeshBasicMaterial({
+		// Add cosmic rings around the boss
+		const ringGeometry = new THREE.TorusGeometry(1.8, 0.08, 8, 48);
+		const ringMaterial = new THREE.MeshStandardMaterial({
 			color: 0x00ffff,
+			emissive: 0x00ffff,
+			emissiveIntensity: 0.5,
 			transparent: true,
-			opacity: 0.5,
+			opacity: 0.7,
 			side: THREE.DoubleSide
 		});
 
-		const indicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
-		indicator.rotation.x = Math.PI / 2;
-		indicator.position.y = 0.1;
-		group.add(indicator);
+		const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring.rotation.x = Math.PI / 2;
+		ring.position.y = 0.1;
+		group.add(ring);
+
+		// Add a second ring at a different angle
+		const ring2 = new THREE.Mesh(ringGeometry, ringMaterial.clone());
+		ring2.rotation.x = Math.PI / 3;
+		ring2.rotation.y = Math.PI / 4;
+		ring2.position.y = 0.8;
+		group.add(ring2);
+
+		// Add energy arc effects between orbs
+		for (let i = 0; i < 4; i++) {
+			const nextIdx = (i + 1) % 4;
+			const orb1 = group.children[i + 3]; // Offset for body, core and coreLight
+			const orb2 = group.children[nextIdx + 3];
+
+			// Create an arc between orbs
+			const arcGeometry = new THREE.TorusGeometry(0.6, 0.03, 8, 12, Math.PI);
+			const arcMaterial = new THREE.MeshBasicMaterial({
+				color: 0xff6600,
+				transparent: true,
+				opacity: 0.6
+			});
+
+			const arc = new THREE.Mesh(arcGeometry, arcMaterial);
+			arc.position.y = 0.8;
+
+			// Position and rotate to connect orbs
+			const mid = new THREE.Vector3().addVectors(orb1.position, orb2.position).multiplyScalar(0.5);
+			arc.position.copy(mid);
+
+			// Store orb references for animation
+			arc.userData.orb1 = i + 3;
+			arc.userData.orb2 = nextIdx + 3;
+
+			group.add(arc);
+		}
 
 		return group;
 	}
@@ -607,15 +777,57 @@ export class BossEnemy extends Enemy {
 	}
 
 	private updateOrbPositions(): void {
-		// Update positions of the floating orbs
+		// Update the orbiting orbs
 		for (let i = 0; i < 4; i++) {
-			const orb = this.mesh.children[i + 2] as THREE.Mesh; // Skip body and crown
 			const angle = this.rotationAngle + (i / 4) * Math.PI * 2;
-
+			const orb = this.mesh.children[i + 3]; // Offset for body, core and coreLight
 			orb.position.x = Math.cos(angle) * 1.2;
 			orb.position.z = Math.sin(angle) * 1.2;
-			orb.position.y = 1.0 + Math.sin(angle * 2) * 0.2; // Add some up/down movement
+
+			// Add bobbing motion
+			orb.position.y = 0.8 + Math.sin(angle * 2) * 0.2;
+
+			// Pulsate glow
+			const orbLight = orb.children[0] as THREE.PointLight;
+			orbLight.intensity = 0.5 + Math.sin(this.rotationAngle * 3 + i) * 0.3;
 		}
+
+		// Animate rings
+		const ring1 = this.mesh.children[7] as THREE.Mesh;
+		const ring2 = this.mesh.children[8] as THREE.Mesh;
+
+		ring1.rotation.z += 0.01;
+		ring2.rotation.z -= 0.008;
+		ring2.rotation.x += 0.005;
+
+		// Update energy arcs to connect orbs
+		for (let i = 0; i < 4; i++) {
+			const arc = this.mesh.children[i + 9] as THREE.Mesh; // Offset for previous elements
+			const orb1 = this.mesh.children[arc.userData.orb1] as THREE.Mesh;
+			const orb2 = this.mesh.children[arc.userData.orb2] as THREE.Mesh;
+
+			// Calculate midpoint between orbs
+			const mid = new THREE.Vector3().addVectors(orb1.position, orb2.position).multiplyScalar(0.5);
+			arc.position.copy(mid);
+
+			// Orient arc to face between the orbs
+			const dir = new THREE.Vector3().subVectors(orb2.position, orb1.position).normalize();
+			const axis = new THREE.Vector3(0, 1, 0);
+			arc.quaternion.setFromUnitVectors(axis, dir);
+			arc.rotation.x = Math.PI / 2;
+
+			// Pulsate opacity
+			const material = arc.material as THREE.MeshBasicMaterial;
+			material.opacity = 0.3 + Math.sin(this.rotationAngle * 5 + i * 0.5) * 0.3;
+		}
+
+		// Pulsate core
+		const core = this.mesh.children[1] as THREE.Mesh;
+		const coreMaterial = core.material as THREE.MeshStandardMaterial;
+		coreMaterial.emissiveIntensity = 0.8 + Math.sin(this.rotationAngle * 2) * 0.2;
+
+		const coreLight = this.mesh.children[2] as THREE.PointLight;
+		coreLight.intensity = 1.2 + Math.sin(this.rotationAngle * 2) * 0.3;
 	}
 
 	private showAttackAnimation(): void {

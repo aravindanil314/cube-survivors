@@ -587,6 +587,14 @@ export class GameUI {
 		}
 		pausePanel.appendChild(controlsInfo);
 
+		// Container for buttons
+		const buttonContainer = document.createElement('div');
+		buttonContainer.style.display = 'flex';
+		buttonContainer.style.justifyContent = 'center';
+		buttonContainer.style.gap = '10px';
+		buttonContainer.style.marginTop = '10px';
+		pausePanel.appendChild(buttonContainer);
+
 		// Resume button
 		const resumeButton = document.createElement('button');
 		resumeButton.textContent = 'RESUME GAME';
@@ -624,7 +632,52 @@ export class GameUI {
 			resumeButton.style.transform = 'translateY(0)';
 		};
 
-		pausePanel.appendChild(resumeButton);
+		buttonContainer.appendChild(resumeButton);
+
+		// Exit button
+		const exitButton = document.createElement('button');
+		exitButton.textContent = 'EXIT TO MENU';
+		exitButton.style.padding = '10px 20px';
+		exitButton.style.backgroundColor = '#e74c3c';
+		exitButton.style.border = 'none';
+		exitButton.style.borderRadius = '5px';
+		exitButton.style.color = 'white';
+		exitButton.style.cursor = 'pointer';
+		exitButton.style.fontSize = '1rem';
+		exitButton.style.fontWeight = 'bold';
+		exitButton.style.transition = 'all 0.2s ease';
+		exitButton.style.letterSpacing = '1px';
+		exitButton.style.boxShadow = '0 4px 0 rgba(192, 57, 43, 0.5)';
+		exitButton.style.margin = '0 10px';
+
+		// Button hover and click effects
+		exitButton.onmouseover = () => {
+			exitButton.style.backgroundColor = '#c0392b';
+			exitButton.style.transform = 'translateY(-2px)';
+		};
+
+		exitButton.onmouseout = () => {
+			exitButton.style.backgroundColor = '#e74c3c';
+			exitButton.style.transform = 'translateY(0)';
+		};
+
+		exitButton.onmousedown = () => {
+			exitButton.style.boxShadow = '0 2px 0 rgba(192, 57, 43, 0.5)';
+			exitButton.style.transform = 'translateY(2px)';
+		};
+
+		exitButton.onmouseup = () => {
+			exitButton.style.boxShadow = '0 4px 0 rgba(192, 57, 43, 0.5)';
+			exitButton.style.transform = 'translateY(0)';
+		};
+
+		// Use a custom event to exit the game
+		exitButton.onclick = () => {
+			const exitEvent = new CustomEvent('exit-game');
+			document.dispatchEvent(exitEvent);
+		};
+
+		buttonContainer.appendChild(exitButton);
 
 		// Create pause overlay (dimmed background)
 		const pauseOverlay = document.createElement('div');

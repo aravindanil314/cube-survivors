@@ -7,6 +7,15 @@
 	let resizeObserver: ResizeObserver;
 	let isLoading = true;
 
+	export function cleanup() {
+		if (game) {
+			game.cleanup();
+		}
+		if (resizeObserver) {
+			resizeObserver.disconnect();
+		}
+	}
+
 	onMount(() => {
 		// Initialize the game
 		game = new Game(container);
@@ -22,12 +31,7 @@
 		resizeObserver.observe(container);
 
 		return () => {
-			if (game) {
-				game.cleanup();
-			}
-			if (resizeObserver) {
-				resizeObserver.disconnect();
-			}
+			cleanup();
 		};
 	});
 

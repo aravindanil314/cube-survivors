@@ -1,21 +1,57 @@
-<script>
+<script lang="ts">
 	import GameScene from '$lib/GameScene.svelte';
+	import StartPage from '$lib/StartPage.svelte';
+	import { onMount } from 'svelte';
+	import type { SvelteComponentTyped } from 'svelte';
+
+	interface GameSceneComponent extends SvelteComponentTyped {
+		cleanup: () => void;
+	}
+
+	let showGame = false;
+	let gameSceneComponent: GameSceneComponent | undefined;
+
+	// Event listener for exiting the game
+	onMount(() => {
+		const handleGameExit = () => {
+			// Clean up game resources
+			if (gameSceneComponent) {
+				gameSceneComponent.cleanup();
+			}
+			// Go back to start page
+			showGame = false;
+		};
+
+		document.addEventListener('gameExit', handleGameExit);
+
+		return () => {
+			document.removeEventListener('gameExit', handleGameExit);
+		};
+	});
+
+	function handleStartGame() {
+		showGame = true;
+	}
 </script>
 
-<div class="game-wrapper">
-	<div class="background-grid"></div>
-	<GameScene />
+{#if showGame}
+	<div class="game-wrapper">
+		<div class="background-grid"></div>
+		<GameScene bind:this={gameSceneComponent} />
 
-	<div class="controls-panel">
-		<h2>Controls</h2>
-		<ul>
-			<li>W - Move up</li>
-			<li>A - Move left</li>
-			<li>S - Move down</li>
-			<li>D - Move right</li>
-		</ul>
+		<div class="controls-panel">
+			<h2>Controls</h2>
+			<ul>
+				<li>W - Move up</li>
+				<li>A - Move left</li>
+				<li>S - Move down</li>
+				<li>D - Move right</li>
+			</ul>
+		</div>
 	</div>
-</div>
+{:else}
+	<StartPage on:startGame={handleStartGame} />
+{/if}
 
 <style>
 	:global(body) {
@@ -69,7 +105,7 @@
 	}
 
 	.controls-panel:hover {
-		box-shadow: 0 0 20px rgba(100, 100, 255, 0.5);
+		box-shadow: 0 0 20px rgba(100, 100, 255, 0.8);
 	}
 
 	.controls-panel h2 {

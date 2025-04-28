@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+/* Global styles for responsive game interface */
+:root {
+	--primary-color: #3498db;
+	--secondary-color: #2ecc71;
+	--accent-color: #f39c12;
+	--danger-color: #e74c3c;
+	--dark-color: #2c3e50;
+	--light-color: #ecf0f1;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	font-family:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans',
+		'Helvetica Neue', sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	background-color: #000;
+	color: #fff;
+}
+
+body {
+	position: fixed;
+	overflow: hidden;
+	touch-action: none;
+}
+
+/* Remove all outlines and focus styles */
+* {
+	box-sizing: border-box;
+	outline: none;
+}
+
+/* Remove scrollbars */
+::-webkit-scrollbar {
+	display: none;
+}
+
+/* Adjust for various screen sizes */
+@media (max-width: 768px) {
+	html,
+	body {
+		font-size: 14px;
+	}
+}
+
+@media (max-width: 480px) {
+	html,
+	body {
+		font-size: 12px;
+	}
+}
+
+/* Ensure proper handling of touch events on mobile */
+canvas {
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+}

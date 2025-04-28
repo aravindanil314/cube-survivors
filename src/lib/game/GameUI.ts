@@ -904,14 +904,18 @@ export class GameUI {
 		floatingText.style.pointerEvents = 'none';
 		floatingText.style.animation = 'float-up 1s forwards';
 
-		const styleSheet = document.createElement('style');
-		styleSheet.textContent = `
+		// Add keyframes style with ID if it doesn't exist already
+		if (!document.querySelector('#float-up-keyframes')) {
+			const styleSheet = document.createElement('style');
+			styleSheet.id = 'float-up-keyframes';
+			styleSheet.textContent = `
       @keyframes float-up {
         0% { opacity: 1; transform: translate(-50%, -50%); }
         100% { opacity: 0; transform: translate(-50%, -150%); }
       }
     `;
-		document.head.appendChild(styleSheet);
+			document.head.appendChild(styleSheet);
+		}
 
 		this.container.appendChild(floatingText);
 

@@ -13,11 +13,16 @@ export abstract class Enemy {
 	protected target: PlayerCharacter;
 	protected speed: number;
 	protected health: number;
+	protected maxHealth: number;
 	public isDead: boolean = false;
 	protected moveDirection: THREE.Vector3 = new THREE.Vector3();
 	protected type: EnemyType;
 	protected healthDropChance: number = 0.1; // Default health drop chance
 	protected isBoss: boolean = false;
+	protected healthBarContainer!: THREE.Group;
+	protected healthBarBackground!: THREE.Mesh;
+	protected healthBarFill!: THREE.Mesh;
+	protected waveNumber: number = 1; // Track current wave
 
 	constructor(
 		scene: THREE.Scene,
@@ -25,25 +30,98 @@ export abstract class Enemy {
 		target: PlayerCharacter,
 		type: EnemyType,
 		speed: number,
-		health: number
+		health: number,
+		waveNumber: number = 1
 	) {
 		this.scene = scene;
 		this.target = target;
-		this.speed = speed;
-		this.health = health;
+		this.speed = speed * (1 + (waveNumber - 1) * 0.1); // Increase speed with wave
+		this.waveNumber = waveNumber;
+		
+		// Scale health with wave number
+		const healthMultiplier = 1 + (waveNumber - 1) * 0.2; // 20% more health per wave
+		this.health = health * healthMultiplier;
+		this.maxHealth = this.health;
+		
 		this.type = type;
 		this.mesh = this.createMesh();
 		this.mesh.position.copy(position);
 		this.scene.add(this.mesh);
+		
+		// Create health bar
+		this.healthBarContainer = this.createHealthBar();
+		this.mesh.add(this.healthBarContainer);
 	}
 
 	protected abstract createMesh(): THREE.Group;
+
+	protected createHealthBar(): THREE.Group {
+		const healthBarGroup = new THREE.Group();
+		
+		// Position above the enemy
+		healthBarGroup.position.y = 1.2;
+		
+		// Background of health bar (red)
+		const backgroundGeometry = new THREE.PlaneGeometry(1, 0.1);
+		const backgroundMaterial = new THREE.MeshBasicMaterial({
+			color: 0x880000,
+			side: THREE.DoubleSide
+		});
+		this.healthBarBackground = new THREE.Mesh(backgroundGeometry, backgroundMaterial);
+		healthBarGroup.add(this.healthBarBackground);
+		
+		// Foreground of health bar (green)
+		const fillGeometry = new THREE.PlaneGeometry(1, 0.1);
+		const fillMaterial = new THREE.MeshBasicMaterial({
+			color: 0x00cc00,
+			side: THREE.DoubleSide
+		});
+		this.healthBarFill = new THREE.Mesh(fillGeometry, fillMaterial);
+		
+		// Position the fill bar slightly in front of the background
+		this.healthBarFill.position.z = 0.01;
+		
+		// Set the origin to the left side for easier scaling
+		this.healthBarFill.geometry.translate(0.5, 0, 0);
+		this.healthBarFill.position.x = -0.5;
+		
+		healthBarGroup.add(this.healthBarFill);
+		
+		// Make health bar always face the camera
+		healthBarGroup.rotation.x = Math.PI / 2;
+		
+		return healthBarGroup;
+	}
+	
+	protected updateHealthBar(): void {
+		if (this.isDead) return;
+		
+		// Calculate health percentage
+		const healthPercent = Math.max(0, this.health / this.maxHealth);
+		
+		// Update the fill bar scale
+		this.healthBarFill.scale.x = healthPercent;
+		
+		// Make health bar face the camera
+		const camera = this.scene.getObjectByProperty('type', 'OrthographicCamera') as THREE.OrthographicCamera;
+		if (camera) {
+			this.healthBarContainer.lookAt(camera.position);
+		}
+		
+		// Hide health bar when full health
+		if (healthPercent >= 1) {
+			this.healthBarContainer.visible = false;
+		} else {
+			this.healthBarContainer.visible = true;
+		}
+	}
 
 	public update(delta: number): void {
 		if (this.isDead) return;
 
 		this.updateMovement(delta);
 		this.updateAttack(delta);
+		this.updateHealthBar();
 	}
 
 	protected updateMovement(delta: number): void {
@@ -120,8 +198,8 @@ export class MeleeEnemy extends Enemy {
 	private attackCooldown: number = 0;
 	private readonly attackRange: number = 1.2;
 
-	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter) {
-		super(scene, position, target, EnemyType.MELEE, 1.8 + Math.random() * 0.5, 3);
+	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter, waveNumber: number = 1) {
+		super(scene, position, target, EnemyType.MELEE, 1.8 + Math.random() * 0.5, 3, waveNumber);
 		this.healthDropChance = 0.15; // 15% chance to drop health
 	}
 
@@ -225,10 +303,9 @@ export class RangedEnemy extends Enemy {
 	private readonly preferredDistance: number = 8; // Distance they try to maintain from player
 	private readonly shootRange: number = 12; // Max range they can shoot from
 
-	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter) {
-		super(scene, position, target, EnemyType.RANGED, 1.2 + Math.random() * 0.3, 2);
-		this.shootCooldown = Math.random() * 2; // Randomize initial cooldown
-		this.healthDropChance = 0.25; // 25% chance to drop health
+	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter, waveNumber: number = 1) {
+		super(scene, position, target, EnemyType.RANGED, 1.4 + Math.random() * 0.3, 2, waveNumber);
+		this.healthDropChance = 0.2; // 20% chance to drop health
 	}
 
 	protected createMesh(): THREE.Group {
@@ -503,10 +580,18 @@ export class BossEnemy extends Enemy {
 	private phaseTimer: number = 0;
 	private readonly phaseDuration: number = 10; // 10 seconds per phase
 
-	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter) {
-		super(scene, position, target, EnemyType.BOSS, 1.5, 50);
-		this.healthDropChance = 1.0; // 100% chance to drop health when killed
+	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter, waveNumber: number = 10) {
+		// Boss gets much stronger at wave 10
+		// Base health is higher, and we apply an additional multiplier for the boss
+		const bossMultiplier = 2.5; // Special boss strength multiplier
+		super(scene, position, target, EnemyType.BOSS, 1.3, 50, waveNumber);
+		
+		// Override health calculation to make boss significantly stronger
+		this.health = 50 * (1 + (waveNumber - 1) * 0.2) * bossMultiplier;
+		this.maxHealth = this.health;
+		
 		this.isBoss = true;
+		this.healthDropChance = 1.0; // 100% chance to drop health
 	}
 
 	protected createMesh(): THREE.Group {

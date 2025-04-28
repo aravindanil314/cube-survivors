@@ -110,15 +110,15 @@ export class EnemyManager {
 
 		if (this.waveNumber < 6) {
 			// Only melee enemies in early waves
-			enemy = new MeleeEnemy(this.scene, position, this.player);
+			enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
 		} else {
 			// Include ranged enemies from wave 6 and beyond
 			const rangedProbability = 0.25 + (this.waveNumber - 6) * 0.05; // Increases with wave number
 
 			if (Math.random() < rangedProbability) {
-				enemy = new RangedEnemy(this.scene, position, this.player);
+				enemy = new RangedEnemy(this.scene, position, this.player, this.waveNumber);
 			} else {
-				enemy = new MeleeEnemy(this.scene, position, this.player);
+				enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
 			}
 		}
 
@@ -128,7 +128,7 @@ export class EnemyManager {
 	private spawnBoss(): void {
 		// Spawn the boss at the center of the level
 		const bossPosition = new THREE.Vector3(0, 0, -15); // Start a bit away from the player
-		const boss = new BossEnemy(this.scene, bossPosition, this.player);
+		const boss = new BossEnemy(this.scene, bossPosition, this.player, this.waveNumber);
 		this.enemies.push(boss);
 		this.bossSpawned = true;
 
@@ -170,15 +170,15 @@ export class EnemyManager {
 
 			if (this.waveNumber < 6) {
 				// Only melee enemies in early waves
-				this.enemies.push(new MeleeEnemy(this.scene, position, this.player));
+				this.enemies.push(new MeleeEnemy(this.scene, position, this.player, this.waveNumber));
 			} else {
 				// Include ranged enemies from wave 6
 				const rangedProbability = 0.2 + (this.waveNumber - 6) * 0.05; // Cap at 40% in later waves
 
 				if (Math.random() < rangedProbability) {
-					this.enemies.push(new RangedEnemy(this.scene, position, this.player));
+					this.enemies.push(new RangedEnemy(this.scene, position, this.player, this.waveNumber));
 				} else {
-					this.enemies.push(new MeleeEnemy(this.scene, position, this.player));
+					this.enemies.push(new MeleeEnemy(this.scene, position, this.player, this.waveNumber));
 				}
 			}
 		}
@@ -194,7 +194,7 @@ export class EnemyManager {
 		// Spawn only melee enemies for the first wave
 		for (let i = 0; i < spawnCount; i++) {
 			const position = this.getRandomSpawnPosition();
-			this.enemies.push(new MeleeEnemy(this.scene, position, this.player));
+			this.enemies.push(new MeleeEnemy(this.scene, position, this.player, this.waveNumber));
 		}
 
 		// Notify UI of the initial wave

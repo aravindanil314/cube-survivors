@@ -102,8 +102,16 @@ export class Collectible {
 		}
 	}
 
-	public startAttraction(player: PlayerCharacter): void {
-		this.target = player;
+	public startAttraction(target: PlayerCharacter): void {
+		this.target = target;
+		this.attractionSpeed = Math.max(this.attractionSpeed, 0.5); // Start with at least some speed
+	}
+
+	// Method to boost attraction speed for Item Magnet powerup
+	public boostAttractionSpeed(multiplier: number): void {
+		this.maxAttractionSpeed *= multiplier;
+		this.attractionAcceleration *= multiplier;
+		this.attractionSpeed = Math.max(this.attractionSpeed, this.maxAttractionSpeed / 2);
 	}
 
 	private collect(): void {

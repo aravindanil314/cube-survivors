@@ -17,6 +17,15 @@ interface UIElements {
 	pauseOverlay: HTMLElement;
 }
 
+// Define Powerup interface
+interface Powerup {
+	id: string;
+	name: string;
+	description: string;
+	icon: string;
+	color: string;
+}
+
 export class GameUI {
 	private player: PlayerCharacter;
 	private container: HTMLElement;
@@ -24,7 +33,6 @@ export class GameUI {
 	private score: number = 0;
 	private waveNumber: number = 1;
 	private topBar!: HTMLElement;
-	private titleText!: HTMLElement;
 	private waveText!: HTMLElement;
 	private scoreText!: HTMLElement;
 	private pauseButton!: HTMLElement;
@@ -40,6 +48,10 @@ export class GameUI {
 	private isJoystickActive: boolean = false;
 	private shootButton!: HTMLElement;
 	private events: EventEmitter = new EventEmitter();
+	private centerSection!: HTMLElement;
+	private powerupPanel!: HTMLElement;
+	private powerupOverlay!: HTMLElement;
+	private canReroll: boolean = true;
 
 	constructor(container: HTMLElement, player: PlayerCharacter) {
 		this.player = player;
@@ -72,7 +84,7 @@ export class GameUI {
 			this.pauseButton.style.position = 'relative'; // Ensure z-index works
 
 			// Title - hide on mobile to save space
-			this.titleText.style.display = 'none';
+			this.centerSection.style.display = 'none';
 
 			// Wave and score text - smaller and more compact
 			this.waveText.style.fontSize = '0.8rem';
@@ -132,10 +144,9 @@ export class GameUI {
 			// Restore desktop styling
 			this.topBar.style.padding = '10px 15px';
 			this.topBar.style.height = 'auto';
-			this.titleText.style.display = 'block';
+			this.centerSection.style.display = 'block';
 			this.waveText.style.fontSize = '0.9rem';
 			this.scoreText.style.fontSize = '0.9rem';
-			this.titleText.style.fontSize = '1rem';
 			this.pauseButton.style.width = '35px';
 			this.pauseButton.style.height = '35px';
 			this.pauseButton.style.fontSize = '1.3rem';
@@ -229,6 +240,7 @@ export class GameUI {
 		centerSection.style.textAlign = 'center';
 		centerSection.style.pointerEvents = 'none';
 		topBar.appendChild(centerSection);
+		this.centerSection = centerSection;
 
 		// Title text
 		const titleText = document.createElement('div');
@@ -239,7 +251,6 @@ export class GameUI {
 		titleText.style.letterSpacing = '1px';
 		titleText.style.textShadow = '0 0 10px rgba(100, 120, 255, 0.5)';
 		centerSection.appendChild(titleText);
-		this.titleText = titleText;
 
 		// Right section for score and pause - modernized
 		const rightSection = document.createElement('div');
@@ -721,6 +732,40 @@ export class GameUI {
 		shootButtonLabel.style.pointerEvents = 'none';
 		shootButton.appendChild(shootButtonLabel);
 
+		// Create a dark overlay for powerup selection
+		const powerupOverlay = document.createElement('div');
+		powerupOverlay.style.position = 'absolute';
+		powerupOverlay.style.top = '0';
+		powerupOverlay.style.left = '0';
+		powerupOverlay.style.width = '100%';
+		powerupOverlay.style.height = '100%';
+		powerupOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+		powerupOverlay.style.zIndex = '2000';
+		powerupOverlay.style.backdropFilter = 'blur(3px)';
+		powerupOverlay.style.display = 'none';
+		this.container.appendChild(powerupOverlay);
+		this.powerupOverlay = powerupOverlay;
+
+		// Create powerup selection panel
+		const powerupPanel = document.createElement('div');
+		powerupPanel.style.position = 'absolute';
+		powerupPanel.style.top = '50%';
+		powerupPanel.style.left = '50%';
+		powerupPanel.style.transform = 'translate(-50%, -50%)';
+		powerupPanel.style.backgroundColor = 'rgba(10, 20, 50, 0.95)';
+		powerupPanel.style.borderRadius = '10px';
+		powerupPanel.style.padding = '20px';
+		powerupPanel.style.minWidth = '320px';
+		powerupPanel.style.maxWidth = '90%';
+		powerupPanel.style.boxShadow = '0 0 20px rgba(100, 200, 255, 0.5)';
+		powerupPanel.style.border = '2px solid rgba(100, 150, 255, 0.5)';
+		powerupPanel.style.zIndex = '2001';
+		powerupPanel.style.display = 'none';
+		powerupPanel.style.pointerEvents = 'auto';
+		powerupPanel.style.textAlign = 'center';
+		this.container.appendChild(powerupPanel);
+		this.powerupPanel = powerupPanel;
+
 		return {
 			healthBar,
 			healthText,
@@ -772,11 +817,11 @@ export class GameUI {
 	}
 
 	private showLevelUpNotification(level: number): void {
-		// Create a level up notification that appears in the center of the screen
+		// Create a level up notification first
 		const notification = document.createElement('div');
 		notification.textContent = `LEVEL UP! ${level}`;
 		notification.style.position = 'absolute';
-		notification.style.top = '50%';
+		notification.style.top = '30%';
 		notification.style.left = '50%';
 		notification.style.transform = 'translate(-50%, -50%) scale(0.5)';
 		notification.style.color = '#ffdd00';
@@ -785,7 +830,7 @@ export class GameUI {
 		notification.style.textShadow =
 			'0 0 10px rgba(255, 221, 0, 0.7), 0 0 20px rgba(255, 221, 0, 0.5)';
 		notification.style.pointerEvents = 'none';
-		notification.style.zIndex = '1000';
+		notification.style.zIndex = '2002';
 		notification.style.opacity = '0';
 		notification.style.letterSpacing = '3px';
 		notification.style.textAlign = 'center';
@@ -808,62 +853,328 @@ export class GameUI {
 		// Apply animation
 		notification.style.animation = 'levelUpNotification 2s forwards';
 
-		// Also add a label with the level bonus if applicable
-		const bonuses = {
-			2: 'Increased Attack Speed',
-			3: 'Increased Attack Damage',
-			5: 'Double Projectiles',
-			7: 'Increased Attack Range',
-			10: 'Ultimate Weapon Upgrade',
-			15: 'Triple Projectiles',
-			20: 'Maximum Power'
-		};
+		// Show powerup selection after brief delay
+		setTimeout(() => {
+			this.showPowerupSelection(level);
 
-		// @ts-expect-error - TypeScript might complain about the index signature
-		if (bonuses[level]) {
-			const bonusLabel = document.createElement('div');
-			// @ts-expect-error - Using object indexing with numeric key
-			bonusLabel.textContent = `BONUS: ${bonuses[level]}`;
-			bonusLabel.style.position = 'absolute';
-			bonusLabel.style.top = 'calc(50% + 60px)';
-			bonusLabel.style.left = '50%';
-			bonusLabel.style.transform = 'translate(-50%, 0)';
-			bonusLabel.style.color = '#ffffff';
-			bonusLabel.style.fontSize = '1.5rem';
-			bonusLabel.style.fontWeight = 'bold';
-			bonusLabel.style.textShadow = '0 0 10px rgba(0, 100, 255, 0.7)';
-			bonusLabel.style.pointerEvents = 'none';
-			bonusLabel.style.zIndex = '1000';
-			bonusLabel.style.opacity = '0';
-			bonusLabel.style.textAlign = 'center';
-
-			this.container.appendChild(bonusLabel);
-
-			// Different animation for the bonus text
-			const bonusKeyframeStyle = document.createElement('style');
-			bonusKeyframeStyle.textContent = `
-				@keyframes bonusNotification {
-					0% { opacity: 0; transform: translate(-50%, 20px); }
-					30% { opacity: 1; transform: translate(-50%, 0); }
-					70% { opacity: 1; transform: translate(-50%, 0); }
-					100% { opacity: 0; transform: translate(-50%, -20px); }
-				}
-			`;
-			document.head.appendChild(bonusKeyframeStyle);
-			bonusLabel.style.animation = 'bonusNotification 2.5s forwards';
-
-			// Clean up the bonus label
+			// Clean up the notification
 			setTimeout(() => {
-				this.container.removeChild(bonusLabel);
-				document.head.removeChild(bonusKeyframeStyle);
-			}, 2500);
+				this.container.removeChild(notification);
+				document.head.removeChild(keyframeStyle);
+			}, 500);
+		}, 1500);
+	}
+
+	// Available powerups
+	private powerups: Powerup[] = [
+		{
+			id: 'damage',
+			name: 'Damage Boost',
+			description: 'Increase damage by 15%',
+			icon: '💥',
+			color: '#ff5555'
+		},
+		{
+			id: 'speed',
+			name: 'Speed Boost',
+			description: 'Increase movement speed by 15%',
+			icon: '🏃',
+			color: '#55ff55'
+		},
+		{
+			id: 'health',
+			name: 'Max Health',
+			description: 'Increase maximum health by 10%',
+			icon: '❤️',
+			color: '#ff5555'
+		},
+		{
+			id: 'regen',
+			name: 'Health Regen',
+			description: 'Regenerate 1 health every 5 seconds',
+			icon: '💚',
+			color: '#55ff99'
+		},
+		{
+			id: 'attackSpeed',
+			name: 'Attack Speed',
+			description: 'Increase attack speed by 15%',
+			icon: '⚡',
+			color: '#ffff55'
+		},
+		{
+			id: 'critChance',
+			name: 'Critical Hits',
+			description: '10% chance to deal double damage',
+			icon: '🎯',
+			color: '#ff9955'
+		},
+		{
+			id: 'multishot',
+			name: 'Multishot',
+			description: 'Fire an additional projectile',
+			icon: '🔱',
+			color: '#5555ff'
+		},
+		{
+			id: 'range',
+			name: 'Attack Range',
+			description: 'Increase attack range by 15%',
+			icon: '📏',
+			color: '#55ffff'
+		},
+		{
+			id: 'pierce',
+			name: 'Piercing Shot',
+			description: 'Projectiles pierce through enemies',
+			icon: '↗️',
+			color: '#ff55ff'
+		},
+		{
+			id: 'magnet',
+			name: 'Item Magnet',
+			description: 'Automatically collect nearby items',
+			icon: '🧲',
+			color: '#aaaaff'
+		},
+		{
+			id: 'shield',
+			name: 'Shield',
+			description: 'Block the next hit taken',
+			icon: '🛡️',
+			color: '#aaaaaa'
+		},
+		{
+			id: 'poison',
+			name: 'Poison Shots',
+			description: 'Shots apply poison damage over time',
+			icon: '☠️',
+			color: '#99ff55'
+		}
+	];
+
+	private getRandomPowerups(count: number): Powerup[] {
+		// Create a copy of powerups
+		const availablePowerups = [...this.powerups];
+		const randomPowerups = [];
+
+		// Select random powerups
+		for (let i = 0; i < count; i++) {
+			if (availablePowerups.length === 0) break;
+
+			const randomIndex = Math.floor(Math.random() * availablePowerups.length);
+			randomPowerups.push(availablePowerups.splice(randomIndex, 1)[0]);
 		}
 
-		// Clean up the notification
+		return randomPowerups;
+	}
+
+	private showPowerupSelection(level: number): void {
+		// Reset the panel
+		this.powerupPanel.innerHTML = '';
+
+		// Reset reroll ability for this level up
+		this.canReroll = true;
+
+		// Show overlay and panel
+		this.powerupOverlay.style.display = 'block';
+		this.powerupPanel.style.display = 'block';
+
+		// Create title
+		const title = document.createElement('h2');
+		title.textContent = `LEVEL ${level}: SELECT A POWERUP`;
+		title.style.color = '#ffdd00';
+		title.style.margin = '0 0 20px 0';
+		title.style.fontSize = '1.8rem';
+		title.style.textAlign = 'center';
+		title.style.textShadow = '0 0 10px rgba(255, 221, 0, 0.5)';
+		this.powerupPanel.appendChild(title);
+
+		// Add subtitle
+		const subtitle = document.createElement('p');
+		subtitle.textContent = 'Choose one powerup to enhance your character';
+		subtitle.style.color = '#ffffff';
+		subtitle.style.margin = '0 0 20px 0';
+		subtitle.style.fontSize = '1rem';
+		this.powerupPanel.appendChild(subtitle);
+
+		// Get 3 random powerups
+		const randomPowerups = this.getRandomPowerups(3);
+
+		// Create powerup cards container
+		const cardsContainer = document.createElement('div');
+		cardsContainer.style.display = 'flex';
+		cardsContainer.style.justifyContent = 'center';
+		cardsContainer.style.gap = '15px';
+		cardsContainer.style.marginBottom = '20px';
+		cardsContainer.style.flexWrap = 'wrap';
+		this.powerupPanel.appendChild(cardsContainer);
+
+		// Create cards for each powerup
+		randomPowerups.forEach((powerup) => {
+			const card = document.createElement('div');
+			card.style.backgroundColor = 'rgba(30, 40, 60, 0.9)';
+			card.style.border = `2px solid ${powerup.color}`;
+			card.style.borderRadius = '8px';
+			card.style.padding = '15px';
+			card.style.width = '140px';
+			card.style.cursor = 'pointer';
+			card.style.transition = 'transform 0.2s, box-shadow 0.2s';
+			card.style.boxShadow = `0 0 10px rgba(0, 0, 0, 0.5)`;
+
+			// Hover effect
+			card.onmouseover = () => {
+				card.style.transform = 'scale(1.05)';
+				card.style.boxShadow = `0 0 15px ${powerup.color}`;
+			};
+
+			card.onmouseout = () => {
+				card.style.transform = 'scale(1)';
+				card.style.boxShadow = `0 0 10px rgba(0, 0, 0, 0.5)`;
+			};
+
+			// Click event to select powerup
+			card.onclick = () => {
+				this.selectPowerup(powerup);
+			};
+
+			// Icon
+			const icon = document.createElement('div');
+			icon.textContent = powerup.icon;
+			icon.style.fontSize = '2.5rem';
+			icon.style.marginBottom = '10px';
+			icon.style.textShadow = `0 0 10px ${powerup.color}`;
+			card.appendChild(icon);
+
+			// Name
+			const name = document.createElement('div');
+			name.textContent = powerup.name;
+			name.style.fontWeight = 'bold';
+			name.style.fontSize = '1rem';
+			name.style.marginBottom = '8px';
+			name.style.color = powerup.color;
+			card.appendChild(name);
+
+			// Description
+			const desc = document.createElement('div');
+			desc.textContent = powerup.description;
+			desc.style.fontSize = '0.8rem';
+			desc.style.color = '#cccccc';
+			card.appendChild(desc);
+
+			cardsContainer.appendChild(card);
+		});
+
+		// Add reroll button
+		const rerollButton = document.createElement('button');
+		rerollButton.textContent = 'REROLL POWERUPS';
+		rerollButton.style.padding = '10px 20px';
+		rerollButton.style.backgroundColor = this.canReroll
+			? 'rgba(100, 150, 255, 0.7)'
+			: 'rgba(80, 80, 80, 0.7)';
+		rerollButton.style.color = this.canReroll ? 'white' : '#aaaaaa';
+		rerollButton.style.border = 'none';
+		rerollButton.style.borderRadius = '5px';
+		rerollButton.style.fontSize = '1rem';
+		rerollButton.style.cursor = this.canReroll ? 'pointer' : 'not-allowed';
+		rerollButton.style.marginTop = '15px';
+		rerollButton.style.transition = 'background-color 0.2s, transform 0.2s';
+
+		if (this.canReroll) {
+			rerollButton.onmouseover = () => {
+				rerollButton.style.backgroundColor = 'rgba(120, 170, 255, 0.8)';
+				rerollButton.style.transform = 'scale(1.05)';
+			};
+
+			rerollButton.onmouseout = () => {
+				rerollButton.style.backgroundColor = 'rgba(100, 150, 255, 0.7)';
+				rerollButton.style.transform = 'scale(1)';
+			};
+
+			rerollButton.onclick = () => {
+				if (this.canReroll) {
+					this.canReroll = false;
+					this.showPowerupSelection(level);
+				}
+			};
+		}
+
+		this.powerupPanel.appendChild(rerollButton);
+
+		// Add a small note about reroll
+		const rerollNote = document.createElement('div');
+		rerollNote.textContent = '(Can only reroll once per level)';
+		rerollNote.style.fontSize = '0.7rem';
+		rerollNote.style.color = '#aaaaaa';
+		rerollNote.style.marginTop = '5px';
+		this.powerupPanel.appendChild(rerollNote);
+
+		// Emit event to pause the game
+		const pauseEvent = new CustomEvent('pause-for-powerup');
+		document.dispatchEvent(pauseEvent);
+	}
+
+	private selectPowerup(powerup: Powerup): void {
+		// Hide powerup panel and overlay
+		this.powerupPanel.style.display = 'none';
+		this.powerupOverlay.style.display = 'none';
+
+		// Show selected powerup notification
+		const notification = document.createElement('div');
+		notification.style.position = 'absolute';
+		notification.style.top = '50%';
+		notification.style.left = '50%';
+		notification.style.transform = 'translate(-50%, -50%)';
+		notification.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+		notification.style.borderRadius = '10px';
+		notification.style.padding = '15px 25px';
+		notification.style.textAlign = 'center';
+		notification.style.zIndex = '2000';
+		notification.style.opacity = '0';
+		notification.style.animation = 'fadeInOut 2s forwards';
+
+		// Add @keyframes for fadeInOut if it doesn't exist
+		if (!document.querySelector('#fadeInOut-keyframes')) {
+			const styleSheet = document.createElement('style');
+			styleSheet.id = 'fadeInOut-keyframes';
+			styleSheet.textContent = `
+				@keyframes fadeInOut {
+					0% { opacity: 0; transform: translate(-50%, -70%); }
+					20% { opacity: 1; transform: translate(-50%, -50%); }
+					80% { opacity: 1; transform: translate(-50%, -50%); }
+					100% { opacity: 0; transform: translate(-50%, -30%); }
+				}
+			`;
+			document.head.appendChild(styleSheet);
+		}
+
+		// Icon and name
+		const content = document.createElement('div');
+		content.innerHTML = `<div style="font-size: 2rem; margin-bottom: 10px;">${powerup.icon}</div>
+							<div style="font-size: 1.2rem; font-weight: bold; color: ${powerup.color};">${powerup.name}</div>
+							<div style="color: #ccc;">${powerup.description}</div>`;
+		notification.appendChild(content);
+
+		this.container.appendChild(notification);
+
+		// Clean up after animation
 		setTimeout(() => {
 			this.container.removeChild(notification);
-			document.head.removeChild(keyframeStyle);
 		}, 2000);
+
+		// Emit event with selected powerup
+		const powerupEvent = new CustomEvent('powerup-selected', {
+			detail: {
+				powerupId: powerup.id
+			}
+		});
+		document.dispatchEvent(powerupEvent);
+
+		// Emit event to resume the game
+		setTimeout(() => {
+			const resumeEvent = new CustomEvent('resume-from-powerup');
+			document.dispatchEvent(resumeEvent);
+		}, 500);
 	}
 
 	public setWave(wave: number): void {

@@ -18,10 +18,24 @@ export class EnemyManager {
 	private gameWon: boolean = false;
 	private isWaveTransitioning: boolean = false;
 
+	// Static reference to the instance for singleton pattern
+	private static instance: EnemyManager;
+
 	constructor(scene: THREE.Scene, player: PlayerCharacter, boundarySize: number) {
 		this.scene = scene;
 		this.player = player;
 		this.boundarySize = boundarySize;
+		EnemyManager.instance = this; // Store instance for singleton access
+	}
+
+	// Static method to access the instance
+	public static getInstance(): EnemyManager {
+		return EnemyManager.instance;
+	}
+
+	// Method to get all enemies for collision detection
+	public getEnemies(): Enemy[] {
+		return this.enemies;
 	}
 
 	public update(delta: number): void {
@@ -82,7 +96,18 @@ export class EnemyManager {
 			// Check collision with player
 			const distanceToPlayer = enemy.getPosition().distanceTo(this.player.getPosition());
 			if (distanceToPlayer < 1) {
-				const isDead = this.player.takeDamage(1);
+				// Increased collision damage based on wave number and enemy type
+				let collisionDamage = 2; // Base damage increased from 1
+
+				// Scale damage with wave
+				collisionDamage += Math.floor((this.waveNumber - 1) * 0.5);
+
+				// Boss deals more damage on collision
+				if (enemy.getIsBoss()) {
+					collisionDamage *= 2;
+				}
+
+				const isDead = this.player.takeDamage(collisionDamage);
 				if (isDead) {
 					// Game over handling would go here
 				}

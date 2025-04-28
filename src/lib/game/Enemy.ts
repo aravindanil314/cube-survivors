@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PlayerCharacter } from './PlayerCharacter';
+import { EnemyManager } from './EnemyManager';
 
 export enum EnemyType {
 	MELEE = 'melee',
@@ -23,6 +24,8 @@ export abstract class Enemy {
 	protected healthBarBackground!: THREE.Mesh;
 	protected healthBarFill!: THREE.Mesh;
 	protected waveNumber: number = 1; // Track current wave
+	protected collisionRadius: number = 0.7; // Radius for collision detection
+	protected velocity: THREE.Vector3 = new THREE.Vector3();
 
 	constructor(
 		scene: THREE.Scene,
@@ -37,17 +40,17 @@ export abstract class Enemy {
 		this.target = target;
 		this.speed = speed * (1 + (waveNumber - 1) * 0.1); // Increase speed with wave
 		this.waveNumber = waveNumber;
-		
+
 		// Scale health with wave number
 		const healthMultiplier = 1 + (waveNumber - 1) * 0.2; // 20% more health per wave
 		this.health = health * healthMultiplier;
 		this.maxHealth = this.health;
-		
+
 		this.type = type;
 		this.mesh = this.createMesh();
 		this.mesh.position.copy(position);
 		this.scene.add(this.mesh);
-		
+
 		// Create health bar
 		this.healthBarContainer = this.createHealthBar();
 		this.mesh.add(this.healthBarContainer);
@@ -57,57 +60,60 @@ export abstract class Enemy {
 
 	protected createHealthBar(): THREE.Group {
 		const healthBarGroup = new THREE.Group();
-		
+
 		// Position above the enemy
 		healthBarGroup.position.y = 1.2;
-		
-		// Background of health bar (red)
+
+		// Background of health bar (dark gray/black)
 		const backgroundGeometry = new THREE.PlaneGeometry(1, 0.1);
 		const backgroundMaterial = new THREE.MeshBasicMaterial({
-			color: 0x880000,
+			color: 0x222222,
 			side: THREE.DoubleSide
 		});
 		this.healthBarBackground = new THREE.Mesh(backgroundGeometry, backgroundMaterial);
 		healthBarGroup.add(this.healthBarBackground);
-		
-		// Foreground of health bar (green)
+
+		// Foreground of health bar (bright cyan blue)
 		const fillGeometry = new THREE.PlaneGeometry(1, 0.1);
 		const fillMaterial = new THREE.MeshBasicMaterial({
-			color: 0x00cc00,
+			color: 0x00ffff,
 			side: THREE.DoubleSide
 		});
 		this.healthBarFill = new THREE.Mesh(fillGeometry, fillMaterial);
-		
+
 		// Position the fill bar slightly in front of the background
 		this.healthBarFill.position.z = 0.01;
-		
+
 		// Set the origin to the left side for easier scaling
 		this.healthBarFill.geometry.translate(0.5, 0, 0);
 		this.healthBarFill.position.x = -0.5;
-		
+
 		healthBarGroup.add(this.healthBarFill);
-		
+
 		// Make health bar always face the camera
 		healthBarGroup.rotation.x = Math.PI / 2;
-		
+
 		return healthBarGroup;
 	}
-	
+
 	protected updateHealthBar(): void {
 		if (this.isDead) return;
-		
+
 		// Calculate health percentage
 		const healthPercent = Math.max(0, this.health / this.maxHealth);
-		
+
 		// Update the fill bar scale
 		this.healthBarFill.scale.x = healthPercent;
-		
+
 		// Make health bar face the camera
-		const camera = this.scene.getObjectByProperty('type', 'OrthographicCamera') as THREE.OrthographicCamera;
+		const camera = this.scene.getObjectByProperty(
+			'type',
+			'OrthographicCamera'
+		) as THREE.OrthographicCamera;
 		if (camera) {
 			this.healthBarContainer.lookAt(camera.position);
 		}
-		
+
 		// Hide health bar when full health
 		if (healthPercent >= 1) {
 			this.healthBarContainer.visible = false;
@@ -128,13 +134,94 @@ export abstract class Enemy {
 		// Calculate direction to player
 		this.moveDirection.subVectors(this.target.getPosition(), this.mesh.position).normalize();
 
-		// Move toward player
-		this.mesh.position.x += this.moveDirection.x * this.speed * delta;
-		this.mesh.position.z += this.moveDirection.z * this.speed * delta;
+		// Set base velocity towards player
+		this.velocity.copy(this.moveDirection).multiplyScalar(this.speed * delta);
 
-		// Rotate to face player
-		const angle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
-		this.mesh.rotation.y = angle;
+		// Apply collision avoidance with other enemies
+		this.avoidOtherEnemies(delta);
+
+		// Apply collision with player
+		this.handlePlayerCollision(delta);
+
+		// Apply final velocity
+		this.mesh.position.add(this.velocity);
+
+		// Rotate to face movement direction (not necessarily directly at player due to collisions)
+		if (this.velocity.length() > 0.001) {
+			const angle = Math.atan2(this.velocity.x, this.velocity.z);
+			// Smooth rotation
+			const currentAngle = this.mesh.rotation.y;
+			const angleDiff = ((angle - currentAngle + Math.PI) % (Math.PI * 2)) - Math.PI;
+			this.mesh.rotation.y += angleDiff * 0.1;
+		}
+	}
+
+	protected avoidOtherEnemies(delta: number): void {
+		// Get all enemies from the scene
+		const enemiesInScene = this.getAllEnemiesInScene();
+
+		// Check distance to other enemies
+		for (const otherEnemy of enemiesInScene) {
+			if (otherEnemy === this || otherEnemy.isDead) continue;
+
+			// Optimization: Skip collision checking for enemies that are far away
+			// Quick check using Manhattan distance first (cheaper than full distance calculation)
+			const dx = Math.abs(this.mesh.position.x - otherEnemy.mesh.position.x);
+			const dz = Math.abs(this.mesh.position.z - otherEnemy.mesh.position.z);
+
+			// If enemies are clearly too far on either axis, skip the full check
+			if (dx > 2 || dz > 2) continue;
+
+			// Only now do the more expensive full distance calculation
+			const distance = this.mesh.position.distanceTo(otherEnemy.mesh.position);
+			const minDistance = this.collisionRadius + otherEnemy.collisionRadius;
+
+			if (distance < minDistance) {
+				// Calculate repulsion direction
+				const repulsionDir = new THREE.Vector3()
+					.subVectors(this.mesh.position, otherEnemy.mesh.position)
+					.normalize();
+
+				// Strength is stronger the closer they are
+				const strength = (minDistance - distance) / minDistance;
+
+				// Apply repulsion force
+				const repulsionForce = repulsionDir.multiplyScalar(strength * this.speed * delta * 2);
+				this.velocity.add(repulsionForce);
+
+				// If enemies are really overlapping, push them apart more forcefully
+				if (distance < minDistance * 0.5) {
+					this.mesh.position.add(repulsionDir.multiplyScalar(0.05));
+				}
+			}
+		}
+	}
+
+	protected handlePlayerCollision(delta: number): void {
+		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
+		const minDistance = this.collisionRadius + 0.5; // Player radius estimated at 0.5
+
+		if (distanceToPlayer < minDistance) {
+			// Calculate bounce direction
+			const bounceDir = new THREE.Vector3()
+				.subVectors(this.mesh.position, this.target.getPosition())
+				.normalize();
+
+			// Apply bounce force
+			const bounceForce = bounceDir.multiplyScalar(this.speed * delta * 1.5);
+			this.velocity.add(bounceForce);
+
+			// For bosses, apply less bounce
+			if (this.isBoss) {
+				this.velocity.multiplyScalar(0.7);
+			}
+		}
+	}
+
+	protected getAllEnemiesInScene(): Enemy[] {
+		// This method needs to be initialized with the list of enemies during update
+		// It will be properly set by the EnemyManager
+		return EnemyManager.getInstance().getEnemies();
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -198,9 +285,15 @@ export class MeleeEnemy extends Enemy {
 	private attackCooldown: number = 0;
 	private readonly attackRange: number = 1.2;
 
-	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter, waveNumber: number = 1) {
+	constructor(
+		scene: THREE.Scene,
+		position: THREE.Vector3,
+		target: PlayerCharacter,
+		waveNumber: number = 1
+	) {
 		super(scene, position, target, EnemyType.MELEE, 1.8 + Math.random() * 0.5, 3, waveNumber);
 		this.healthDropChance = 0.15; // 15% chance to drop health
+		this.collisionRadius = 0.6; // Slightly smaller collision for melee enemies
 	}
 
 	protected createMesh(): THREE.Group {
@@ -270,8 +363,11 @@ export class MeleeEnemy extends Enemy {
 		// Check if in range and cooldown is finished
 		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
 		if (distanceToPlayer <= this.attackRange && this.attackCooldown <= 0) {
-			// Attack the player
-			this.target.takeDamage(1);
+			// Attack the player - increased damage based on wave
+			const baseDamage = 2; // Increased from 1
+			const waveDamageMultiplier = 1 + (this.waveNumber - 1) * 0.15; // 15% more damage per wave
+			const finalDamage = Math.round(baseDamage * waveDamageMultiplier);
+			this.target.takeDamage(finalDamage);
 
 			// Reset cooldown
 			this.attackCooldown = 1.0; // 1 second between attacks
@@ -303,9 +399,15 @@ export class RangedEnemy extends Enemy {
 	private readonly preferredDistance: number = 8; // Distance they try to maintain from player
 	private readonly shootRange: number = 12; // Max range they can shoot from
 
-	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter, waveNumber: number = 1) {
+	constructor(
+		scene: THREE.Scene,
+		position: THREE.Vector3,
+		target: PlayerCharacter,
+		waveNumber: number = 1
+	) {
 		super(scene, position, target, EnemyType.RANGED, 1.4 + Math.random() * 0.3, 2, waveNumber);
 		this.healthDropChance = 0.2; // 20% chance to drop health
+		this.collisionRadius = 0.55; // Slightly smaller collision for ranged enemies
 	}
 
 	protected createMesh(): THREE.Group {
@@ -399,28 +501,35 @@ export class RangedEnemy extends Enemy {
 		const distanceToPlayer = this.moveDirection.length();
 		this.moveDirection.normalize();
 
-		// If too close to the player, move away
+		// Set base velocity based on preferred distance
 		if (distanceToPlayer < this.preferredDistance - 1) {
-			this.mesh.position.x -= this.moveDirection.x * this.speed * delta;
-			this.mesh.position.z -= this.moveDirection.z * this.speed * delta;
-		}
-		// If too far from the player, move closer
-		else if (distanceToPlayer > this.preferredDistance + 1) {
-			this.mesh.position.x += this.moveDirection.x * this.speed * delta;
-			this.mesh.position.z += this.moveDirection.z * this.speed * delta;
-		}
-		// If at a good distance, move sideways to avoid being hit
-		else {
-			// Create a perpendicular vector for strafing
+			// Too close to player, move away
+			this.velocity.copy(this.moveDirection).multiplyScalar(-this.speed * delta);
+		} else if (distanceToPlayer > this.preferredDistance + 1) {
+			// Too far from player, move closer
+			this.velocity.copy(this.moveDirection).multiplyScalar(this.speed * delta);
+		} else {
+			// At good distance, strafe sideways
 			const strafeDir = new THREE.Vector3(-this.moveDirection.z, 0, this.moveDirection.x);
 			strafeDir.multiplyScalar(Math.sin(Date.now() * 0.001) * this.speed * delta);
-
-			this.mesh.position.add(strafeDir);
+			this.velocity.copy(strafeDir);
 		}
 
-		// Always face the player
+		// Apply collision avoidance with other enemies
+		this.avoidOtherEnemies(delta);
+
+		// Apply collision with player
+		this.handlePlayerCollision(delta);
+
+		// Apply final velocity
+		this.mesh.position.add(this.velocity);
+
+		// Always face player regardless of actual movement direction
 		const angle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
-		this.mesh.rotation.y = angle;
+		// Smooth rotation
+		const currentAngle = this.mesh.rotation.y;
+		const angleDiff = ((angle - currentAngle + Math.PI) % (Math.PI * 2)) - Math.PI;
+		this.mesh.rotation.y += angleDiff * 0.2;
 
 		// Update projectile positions
 		this.updateProjectiles(delta);
@@ -460,10 +569,15 @@ export class RangedEnemy extends Enemy {
 		this.scene.add(projectile);
 
 		// Store direction and other properties with the projectile
+		// Increased damage based on wave
+		const baseDamage = 2; // Increased from 1
+		const waveDamageMultiplier = 1 + (this.waveNumber - 1) * 0.1; // 10% more damage per wave
+		const finalDamage = Math.round(baseDamage * waveDamageMultiplier);
+
 		const userData = {
 			direction: this.moveDirection.clone(),
 			speed: 5, // Faster than the enemy
-			damage: 1,
+			damage: finalDamage,
 			lifetime: 4, // Seconds before disappearing
 			timeLived: 0
 		};
@@ -573,25 +687,30 @@ export class BossEnemy extends Enemy {
 	private specialAttackTime: number = 0;
 	private isDoingSpecialAttack: boolean = false;
 	private projectiles: THREE.Mesh[] = [];
-	private specialProjectiles: THREE.Mesh[] = [];
 	private rotationAngle: number = 0;
 	private readonly attackPhases = ['melee', 'ranged', 'special'];
 	private currentPhase: number = 0;
 	private phaseTimer: number = 0;
 	private readonly phaseDuration: number = 10; // 10 seconds per phase
 
-	constructor(scene: THREE.Scene, position: THREE.Vector3, target: PlayerCharacter, waveNumber: number = 10) {
+	constructor(
+		scene: THREE.Scene,
+		position: THREE.Vector3,
+		target: PlayerCharacter,
+		waveNumber: number = 10
+	) {
 		// Boss gets much stronger at wave 10
 		// Base health is higher, and we apply an additional multiplier for the boss
 		const bossMultiplier = 2.5; // Special boss strength multiplier
 		super(scene, position, target, EnemyType.BOSS, 1.3, 50, waveNumber);
-		
+
 		// Override health calculation to make boss significantly stronger
 		this.health = 50 * (1 + (waveNumber - 1) * 0.2) * bossMultiplier;
 		this.maxHealth = this.health;
-		
+
 		this.isBoss = true;
 		this.healthDropChance = 1.0; // 100% chance to drop health
+		this.collisionRadius = 1.8; // Much larger collision radius for boss
 	}
 
 	protected createMesh(): THREE.Group {
@@ -773,24 +892,47 @@ export class BossEnemy extends Enemy {
 	}
 
 	private updateMeleePhase(delta: number): void {
-		// Move toward player
+		// Move toward player more aggressively
 		this.moveDirection.subVectors(this.target.getPosition(), this.mesh.position).normalize();
-		this.mesh.position.x += this.moveDirection.x * this.speed * 1.2 * delta;
-		this.mesh.position.z += this.moveDirection.z * this.speed * 1.2 * delta;
+		this.velocity.copy(this.moveDirection).multiplyScalar(this.speed * 1.2 * delta);
+
+		// Apply collision avoidance with other enemies
+		this.avoidOtherEnemies(delta);
+
+		// Apply collision with player - but with less push for the boss
+		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
+		const minDistance = this.collisionRadius + 0.5; // Player radius estimated at 0.5
+
+		if (distanceToPlayer < minDistance) {
+			// Calculate bounce direction but with reduced effect
+			const bounceDir = new THREE.Vector3()
+				.subVectors(this.mesh.position, this.target.getPosition())
+				.normalize();
+
+			// Apply reduced bounce force for boss
+			const bounceForce = bounceDir.multiplyScalar(this.speed * delta * 0.5);
+			this.velocity.add(bounceForce);
+		}
+
+		// Apply final velocity
+		this.mesh.position.add(this.velocity);
 
 		// Rotate to face player
 		const angle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
-		this.mesh.rotation.y = angle;
+		// Smooth rotation
+		const currentAngle = this.mesh.rotation.y;
+		const angleDiff = ((angle - currentAngle + Math.PI) % (Math.PI * 2)) - Math.PI;
+		this.mesh.rotation.y += angleDiff * 0.3;
 
 		// Attack if in range
 		if (this.attackCooldown > 0) {
 			this.attackCooldown -= delta;
 		}
 
-		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
-		if (distanceToPlayer <= this.attackRange && this.attackCooldown <= 0) {
-			// Strong melee attack
-			this.target.takeDamage(2);
+		const distanceForAttack = this.mesh.position.distanceTo(this.target.getPosition());
+		if (distanceForAttack <= this.attackRange && this.attackCooldown <= 0) {
+			// Strong melee attack - increased from 2 to 4
+			this.target.takeDamage(4);
 			this.attackCooldown = 0.8;
 
 			// Visual feedback for attack
@@ -808,21 +950,33 @@ export class BossEnemy extends Enemy {
 
 		// Maintain distance
 		if (distanceToPlayer < preferredDistance - 2) {
-			this.mesh.position.x -= this.moveDirection.x * this.speed * delta;
-			this.mesh.position.z -= this.moveDirection.z * this.speed * delta;
+			// Too close to player, move away
+			this.velocity.copy(this.moveDirection).multiplyScalar(-this.speed * delta);
 		} else if (distanceToPlayer > preferredDistance + 2) {
-			this.mesh.position.x += this.moveDirection.x * this.speed * delta;
-			this.mesh.position.z += this.moveDirection.z * this.speed * delta;
+			// Too far from player, move closer
+			this.velocity.copy(this.moveDirection).multiplyScalar(this.speed * delta);
 		} else {
 			// Strafe sideways
 			const strafeDir = new THREE.Vector3(-this.moveDirection.z, 0, this.moveDirection.x);
 			strafeDir.multiplyScalar(Math.sin(Date.now() * 0.001) * this.speed * delta);
-			this.mesh.position.add(strafeDir);
+			this.velocity.copy(strafeDir);
 		}
+
+		// Apply collision avoidance with other enemies
+		this.avoidOtherEnemies(delta);
+
+		// Apply collision with player
+		this.handlePlayerCollision(delta);
+
+		// Apply final velocity
+		this.mesh.position.add(this.velocity);
 
 		// Face player
 		const angle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
-		this.mesh.rotation.y = angle;
+		// Smooth rotation
+		const currentAngle = this.mesh.rotation.y;
+		const angleDiff = ((angle - currentAngle + Math.PI) % (Math.PI * 2)) - Math.PI;
+		this.mesh.rotation.y += angleDiff * 0.2;
 
 		// Shoot at player
 		if (this.attackCooldown > 0) {
@@ -841,12 +995,31 @@ export class BossEnemy extends Enemy {
 			this.specialAttackCooldown -= delta;
 		}
 
-		// Move slower during special phase
+		// Move slower during special phase but with base velocity toward player
 		this.moveDirection.subVectors(this.target.getPosition(), this.mesh.position).normalize();
-		this.mesh.position.x += this.moveDirection.x * this.speed * 0.5 * delta;
-		this.mesh.position.z += this.moveDirection.z * this.speed * 0.5 * delta;
+		this.velocity.copy(this.moveDirection).multiplyScalar(this.speed * 0.5 * delta);
 
-		// Spin around
+		// Apply collision avoidance with other enemies
+		this.avoidOtherEnemies(delta);
+
+		// Apply collision with player but with minimal effect
+		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
+		const minDistance = this.collisionRadius + 0.5;
+
+		if (distanceToPlayer < minDistance) {
+			const bounceDir = new THREE.Vector3()
+				.subVectors(this.mesh.position, this.target.getPosition())
+				.normalize();
+
+			// Very minimal bounce for special phase
+			const bounceForce = bounceDir.multiplyScalar(this.speed * delta * 0.3);
+			this.velocity.add(bounceForce);
+		}
+
+		// Apply final velocity
+		this.mesh.position.add(this.velocity);
+
+		// Spin around regardless of movement direction
 		this.mesh.rotation.y += delta * 3;
 
 		// Shoot in multiple directions during special attack
@@ -986,10 +1159,10 @@ export class BossEnemy extends Enemy {
 
 		animate();
 
-		// Damage player if in range
+		// Damage player if in range - increased from 3 to 6
 		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
 		if (distanceToPlayer < 5) {
-			this.target.takeDamage(3);
+			this.target.takeDamage(6);
 		}
 	}
 
@@ -1017,11 +1190,12 @@ export class BossEnemy extends Enemy {
 		light.position.set(0, 0, 0);
 		projectile.add(light);
 
-		// Store direction and other properties
+		// Store direction and other properties - increased base damage by 1.5x
+		const enhancedDamage = Math.round(damage * 1.5);
 		const userData = {
 			direction: direction,
 			speed: 6,
-			damage: damage,
+			damage: enhancedDamage,
 			lifetime: 5,
 			timeLived: 0
 		};

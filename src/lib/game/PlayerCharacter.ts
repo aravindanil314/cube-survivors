@@ -30,6 +30,11 @@ export class PlayerCharacter {
 	};
 	private levelUpParticles: THREE.Points[] = [];
 	public isDead: boolean = false;
+	private hasShield: boolean = false;
+	private healthRegenEnabled: boolean = false;
+	private healthRegenTimer: number = 0;
+	private healthRegenInterval: number = 5; // seconds between regeneration
+	private healthRegenAmount: number = 1; // health per regen tick
 
 	constructor(scene: THREE.Scene, boundarySize: number = 20) {
 		this.scene = scene;
@@ -184,6 +189,15 @@ export class PlayerCharacter {
 			}
 		}
 
+		// Health regeneration if enabled
+		if (this.healthRegenEnabled && !this.isDead) {
+			this.healthRegenTimer += delta;
+			if (this.healthRegenTimer >= this.healthRegenInterval) {
+				this.heal(this.healthRegenAmount);
+				this.healthRegenTimer = 0;
+			}
+		}
+
 		// Calculate new position with boundary checks
 		const newX = this.mesh.position.x + movement.x * this.moveSpeed * delta;
 		const newZ = this.mesh.position.z + movement.z * this.moveSpeed * delta;
@@ -205,27 +219,52 @@ export class PlayerCharacter {
 		this.weapon.update(delta);
 
 		// Update level-up particles if any
-		this.updateLevelUpParticles(delta);
+		this.updateLevelUpParticles();
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	private updateLevelUpParticles(delta: number): void {
+	private updateLevelUpParticles(): void {
 		for (let i = this.levelUpParticles.length - 1; i >= 0; i--) {
 			const particles = this.levelUpParticles[i];
-			const positions = particles.geometry.attributes.position.array;
 
-			// Move particles upward and outward
+			// Animate particles
+			const positions = particles.geometry.attributes.position.array;
+			let removeParticles = true;
+
 			for (let j = 0; j < positions.length; j += 3) {
-				positions[j] *= 1.01; // Expand X
-				positions[j + 1] += 0.1; // Move up
-				positions[j + 2] *= 1.01; // Expand Z
+				// Move particles upward and outward
+				positions[j] *= 1.03; // Expand outward X
+				positions[j + 1] += 0.15; // Move up Y
+				positions[j + 2] *= 1.03; // Expand outward Z
+
+				// Fade out and shrink when high enough
+				const material = particles.material as THREE.PointsMaterial;
+				material.opacity -= 0.01;
+				material.size *= 0.995;
+
+				// If particles are still visible, don't remove yet
+				if (material.opacity > 0.05) {
+					removeParticles = false;
+				}
 			}
 
 			particles.geometry.attributes.position.needsUpdate = true;
 
-			// Remove particles after they've expanded enough
-			if (positions[1] > 10) {
+			// Remove particles when they're no longer visible
+			if (removeParticles) {
 				this.scene.remove(particles);
+
+				// Properly dispose of geometry and materials to prevent memory leaks
+				if (particles.geometry) {
+					particles.geometry.dispose();
+				}
+				if (particles.material) {
+					if (Array.isArray(particles.material)) {
+						particles.material.forEach((material) => material.dispose());
+					} else {
+						particles.material.dispose();
+					}
+				}
+
 				this.levelUpParticles.splice(i, 1);
 			}
 		}
@@ -237,6 +276,13 @@ export class PlayerCharacter {
 
 	public takeDamage(amount: number): boolean {
 		if (this.isInvulnerable) return false;
+
+		// If shield is active, absorb the hit and disable shield
+		if (this.hasShield) {
+			this.hasShield = false;
+			this.showShieldEffect();
+			return false;
+		}
 
 		this.health = Math.max(0, this.health - amount);
 
@@ -441,5 +487,73 @@ export class PlayerCharacter {
 
 	public checkWeaponCollisions(enemies: Enemy[]): Enemy[] {
 		return this.weapon.checkEnemyCollisions(enemies);
+	}
+
+	// Getter for the weapon
+	public getWeapon(): Weapon {
+		return this.weapon;
+	}
+
+	// Method to increase movement speed by a percentage
+	public increaseSpeed(percentage: number): void {
+		this.moveSpeed *= 1 + percentage;
+	}
+
+	// Method to set maximum health
+	public setMaxHealth(value: number): void {
+		this.maxHealth = value;
+	}
+
+	// Method to enable health regeneration
+	public enableHealthRegen(): void {
+		this.healthRegenEnabled = true;
+		// If already enabled, increase regen rate or amount
+		if (this.healthRegenEnabled) {
+			this.healthRegenAmount += 1;
+			this.healthRegenInterval = Math.max(1, this.healthRegenInterval * 0.8);
+		}
+	}
+
+	// Method to add a shield
+	public addShield(): void {
+		this.hasShield = true;
+		this.showShieldEffect();
+	}
+
+	// Visual effect for shield activation/deactivation
+	private showShieldEffect(): void {
+		// Create shield visual effect
+		const shieldGeometry = new THREE.SphereGeometry(1, 32, 32);
+		const shieldMaterial = new THREE.MeshBasicMaterial({
+			color: 0x3399ff,
+			transparent: true,
+			opacity: 0.4,
+			side: THREE.DoubleSide
+		});
+
+		const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+		shield.position.copy(this.mesh.position);
+		shield.position.y = 0.5;
+		this.scene.add(shield);
+
+		// Animate shield effect
+		const startTime = Date.now();
+		const duration = 1000; // ms
+
+		// Animate shield expanding and fading
+		const animateShield = () => {
+			const elapsed = Date.now() - startTime;
+			const progress = elapsed / duration;
+
+			if (progress < 1) {
+				shield.scale.set(1 + progress, 1 + progress, 1 + progress);
+				shieldMaterial.opacity = 0.4 * (1 - progress);
+				requestAnimationFrame(animateShield);
+			} else {
+				this.scene.remove(shield);
+			}
+		};
+
+		animateShield();
 	}
 }

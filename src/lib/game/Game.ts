@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import Stats from 'three/addons/libs/stats.module.js';
 import { PlayerCharacter } from './PlayerCharacter';
 import { EnemyManager } from './EnemyManager';
 import { CollectibleManager } from './CollectibleManager';
@@ -26,6 +27,9 @@ export class Game {
 	private particles: THREE.Object3D[] = [];
 	private touchMovement: { x: number; z: number } = { x: 0, z: 0 };
 	private isMobile: boolean = false;
+	private stats: Stats;
+	private memoryStats: Stats;
+	private wasJustResumed = false;
 
 	constructor(container: HTMLElement) {
 		this.container = container;
@@ -39,6 +43,18 @@ export class Game {
 
 		// Initialize properties
 		this.scene = new THREE.Scene();
+
+		// Initialize Stats for FPS monitoring
+		this.stats = new Stats();
+		this.stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
+		this.stats.dom.style.cssText = 'position:absolute;top:0;left:0;';
+		this.container.appendChild(this.stats.dom);
+
+		// Initialize second Stats instance for memory monitoring
+		this.memoryStats = new Stats();
+		this.memoryStats.showPanel(2); // Show memory panel
+		this.memoryStats.dom.style.cssText = 'position:absolute;top:0;left:80px;';
+		this.container.appendChild(this.memoryStats.dom);
 
 		// Check if on mobile device
 		this.isMobile = window.innerWidth < 768;
@@ -70,6 +86,26 @@ export class Game {
 			const customEvent = e as CustomEvent<{ x: number; z: number }>;
 			// Update touch movement vector
 			this.touchMovement = customEvent.detail;
+		}) as EventListener);
+
+		// Listen for powerup selection pause/resume events
+		document.addEventListener('pause-for-powerup', () => {
+			this.isPaused = true;
+		});
+
+		document.addEventListener('resume-from-powerup', () => {
+			this.isPaused = false;
+			this.wasJustResumed = true;
+			this.touchMovement = { x: 0, z: 0 };
+			if (this.keys) {
+				Object.keys(this.keys).forEach((k) => (this.keys[k] = false));
+			}
+		});
+
+		// Listen for powerup selection event
+		document.addEventListener('powerup-selected', ((e: Event) => {
+			const customEvent = e as CustomEvent<{ powerupId: string }>;
+			this.applyPowerup(customEvent.detail.powerupId);
 		}) as EventListener);
 
 		// Handle window resize to update isMobile flag
@@ -430,7 +466,11 @@ export class Game {
 		if (this.isGameOver) return;
 		if (this.isPaused) return; // Skip update if game is paused
 
-		const delta = this.clock.getDelta();
+		let delta = this.clock.getDelta();
+		if (this.wasJustResumed) {
+			delta = Math.min(delta, 1 / 60); // Clamp to 1/60th of a second
+			this.wasJustResumed = false;
+		}
 		this.gameTime += delta;
 
 		// Initialize movement vector
@@ -494,32 +534,64 @@ export class Game {
 			this.score += pointsEarned;
 			this.ui.addScore(pointsEarned);
 
-			// Spawn collectibles at killed enemy positions
-			killedEnemies.forEach((enemy) => {
-				const position = enemy.getMesh().position.clone();
+			// Get current collectible count from collectible manager
+			const currentCollectibles = this.collectibleManager.getCollectibleCount();
+			const maxCollectibles = 200; // Maximum collectibles to prevent lag
 
-				// Always drop experience - now dropping multiple XP collectibles
-				const xpAmount = enemy.getIsBoss() ? 10 : 2; // More XP from bosses, 2 from regular enemies
+			// Only spawn new collectibles if we haven't reached the limit
+			if (currentCollectibles < maxCollectibles) {
+				// Spawn collectibles at killed enemy positions
+				killedEnemies.forEach((enemy) => {
+					const position = enemy.getMesh().position.clone();
 
-				for (let i = 0; i < xpAmount; i++) {
-					// Add some spread to the collectibles
-					const offset = new THREE.Vector3(
-						(Math.random() - 0.5) * 1.5,
-						0,
-						(Math.random() - 0.5) * 1.5
-					);
-					this.collectibleManager.spawnCollectible(
-						position.clone().add(offset),
-						CollectibleType.EXPERIENCE
-					);
+					// Always drop experience - now dropping multiple XP collectibles
+					// Scale back the number of XP drops for performance at higher waves
+					const baseDrop = enemy.getIsBoss() ? 10 : 2;
+					const scaleFactor = this.currentWave > 5 ? 5 / this.currentWave : 1;
+					const xpAmount = Math.max(1, Math.floor(baseDrop * scaleFactor));
+
+					// Limit the number of collectibles we spawn based on available space
+					const actualXpAmount = Math.min(xpAmount, maxCollectibles - currentCollectibles);
+					if (actualXpAmount <= 0) return;
+
+					for (let i = 0; i < actualXpAmount; i++) {
+						// Add some spread to the collectibles
+						const offset = new THREE.Vector3(
+							(Math.random() - 0.5) * 1.5,
+							0,
+							(Math.random() - 0.5) * 1.5
+						);
+						this.collectibleManager.spawnCollectible(
+							position.clone().add(offset),
+							CollectibleType.EXPERIENCE
+						);
+					}
+
+					// Check if should drop health based on enemy type's drop chance
+					if (
+						Math.random() < enemy.getHealthDropChance() &&
+						currentCollectibles + actualXpAmount < maxCollectibles
+					) {
+						this.collectibleManager.spawnCollectible(position, CollectibleType.HEALTH);
+					}
+				});
+			} else {
+				// If we're at the limit, just give the player the XP directly without spawning collectibles
+				let totalXP = 0;
+				killedEnemies.forEach((enemy) => {
+					totalXP += enemy.getIsBoss() ? 10 : 2;
+				});
+
+				if (totalXP > 0) {
+					this.player.addExperience(totalXP);
 				}
 
-				// Check if should drop health based on enemy type's drop chance
-				const healthDropChance = enemy.getHealthDropChance();
-				if (Math.random() < healthDropChance) {
+				// Still spawn health rarely when needed
+				if (this.player.getHealth() < this.player.getMaxHealth() * 0.5 && Math.random() < 0.1) {
+					const position = killedEnemies[0].getMesh().position.clone();
 					this.collectibleManager.spawnCollectible(position, CollectibleType.HEALTH);
 				}
-			});
+			}
 		}
 
 		// Update particle animations
@@ -587,8 +659,15 @@ export class Game {
 
 	private animate(): void {
 		requestAnimationFrame(this.animate.bind(this));
+
+		this.stats.begin();
+		this.memoryStats.begin();
+
 		this.update();
 		this.renderer.render(this.scene, this.camera);
+
+		this.stats.end();
+		this.memoryStats.end();
 	}
 
 	public exitGame(): void {
@@ -616,6 +695,14 @@ export class Game {
 		// Remove input handlers
 		window.removeEventListener('resize', this.handleResize.bind(this));
 
+		// Remove stats panels
+		if (this.stats && this.stats.dom && this.stats.dom.parentElement) {
+			this.stats.dom.parentElement.removeChild(this.stats.dom);
+		}
+		if (this.memoryStats && this.memoryStats.dom && this.memoryStats.dom.parentElement) {
+			this.memoryStats.dom.parentElement.removeChild(this.memoryStats.dom);
+		}
+
 		// Dispose of THREE.js resources
 		this.renderer.dispose();
 
@@ -641,6 +728,87 @@ export class Game {
 		} else {
 			this.clock.start(); // Restart the clock
 			this.ui.hidePauseScreen();
+		}
+	}
+
+	// Add a new method to apply powerups
+	private applyPowerup(powerupId: string): void {
+		switch (powerupId) {
+			case 'damage': {
+				// Increase damage by 15%
+				const currentDamage = this.player.getWeapon().getProjectileDamage();
+				this.player.getWeapon().setProjectileDamage(currentDamage * 1.15);
+				break;
+			}
+
+			case 'speed': {
+				// Increase movement speed by 15%
+				this.player.increaseSpeed(0.15);
+				break;
+			}
+
+			case 'health': {
+				// Increase maximum health by 10%
+				const currentMaxHealth = this.player.getMaxHealth();
+				this.player.setMaxHealth(Math.floor(currentMaxHealth * 1.1));
+				this.player.heal(Math.floor(currentMaxHealth * 0.1)); // Heal by the amount increased
+				break;
+			}
+
+			case 'regen': {
+				// Add health regeneration
+				this.player.enableHealthRegen();
+				break;
+			}
+
+			case 'attackSpeed': {
+				// Increase attack speed by 15%
+				const currentCooldown = this.player.getWeapon().getCooldownTime();
+				this.player.getWeapon().setCooldownTime(currentCooldown * 0.85);
+				break;
+			}
+
+			case 'critChance': {
+				// Add critical hit chance
+				this.player.getWeapon().enableCriticalHits();
+				break;
+			}
+
+			case 'multishot': {
+				// Add an additional projectile
+				this.player.getWeapon().increaseProjectileCount(1);
+				break;
+			}
+
+			case 'range': {
+				// Increase attack range by 15%
+				this.player.getWeapon().increaseProjectileSpeed(0.15);
+				break;
+			}
+
+			case 'pierce': {
+				// Enable projectiles to pierce through enemies
+				this.player.getWeapon().enablePiercing();
+				break;
+			}
+
+			case 'magnet': {
+				// Enable item magnet
+				this.collectibleManager.enableMagnet();
+				break;
+			}
+
+			case 'shield': {
+				// Add a shield that blocks one hit
+				this.player.addShield();
+				break;
+			}
+
+			case 'poison': {
+				// Enable poison damage
+				this.player.getWeapon().enablePoisonDamage();
+				break;
+			}
 		}
 	}
 }

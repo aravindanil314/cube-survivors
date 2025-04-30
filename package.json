@@ -38,6 +38,7 @@
 		"vite": "^6.2.5"
 	},
 	"dependencies": {
+		"@vercel/speed-insights": "^1.2.0",
 		"eventemitter3": "^5.0.1",
 		"three": "^0.176.0"
 	},

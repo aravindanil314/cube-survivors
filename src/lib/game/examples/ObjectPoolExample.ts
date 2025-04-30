@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GameObjectFactory } from '../core/GameObjectFactory';
+import { Debug } from '../utils/Debug';
 import { Projectile } from '../entities/Projectile';
 
 /**
@@ -39,7 +40,8 @@ export class ObjectPoolExample {
 		spawnerMesh.position.copy(this.spawnerPosition);
 		scene.add(spawnerMesh);
 
-		console.log('Object Pool Example initialized');
+		const debug = Debug.getInstance();
+		debug.info('Object Pool Example initialized');
 	}
 
 	/**
@@ -64,7 +66,8 @@ export class ObjectPoolExample {
 		// Log stats periodically
 		if (Math.random() < 0.01) {
 			// ~1% chance per frame to log stats
-			console.log('Object Pool Stats:', JSON.stringify(this.factory.getStats(), null, 2));
+			const debug = Debug.getInstance();
+			debug.info(`Object Pool Stats: ${JSON.stringify(this.factory.getStats(), null, 2)}`);
 		}
 	}
 

@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { PlayerCharacter } from './PlayerCharacter';
 import { EnemyManager } from './EnemyManager';
+import { ProjectilePool } from './utils/ProjectilePool';
 
 export enum EnemyType {
 	MELEE = 'melee',
 	RANGED = 'ranged',
+	SPLITTING_MELEE = 'splitting_melee',
+	AOE_RANGED = 'aoe_ranged',
 	BOSS = 'boss'
 }
 
@@ -276,6 +279,10 @@ export abstract class Enemy {
 		return this.isBoss;
 	}
 
+	public getMaxHealth(): number {
+		return this.maxHealth;
+	}
+
 	public cleanup(): void {
 		this.scene.remove(this.mesh);
 	}
@@ -291,113 +298,262 @@ export class MeleeEnemy extends Enemy {
 		target: PlayerCharacter,
 		waveNumber: number = 1
 	) {
-		super(scene, position, target, EnemyType.MELEE, 1.8 + Math.random() * 0.5, 3, waveNumber);
+		super(scene, position, target, EnemyType.MELEE, 3.0, 20, waveNumber);
 		this.healthDropChance = 0.15; // 15% chance to drop health
 		this.collisionRadius = 0.6; // Slightly smaller collision for melee enemies
 	}
 
 	protected createMesh(): THREE.Group {
-		const group = new THREE.Group();
+		// Create a green cube for melee enemies
+		const enemyGroup = new THREE.Group();
 
-		// Enemy body - red crystal structure
-		const bodyGeometry = new THREE.OctahedronGeometry(0.4, 1);
-		const bodyMaterial = new THREE.MeshStandardMaterial({
-			color: 0xff3333,
-			emissive: 0xaa0000,
-			emissiveIntensity: 0.7,
-			metalness: 0.7,
-			roughness: 0.3
-		});
-		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-		body.position.y = 0.4;
-		body.castShadow = true;
-		group.add(body);
+		// Body
+		const bodyGeometry = new THREE.BoxGeometry(1, 1, 1);
+		const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x22cc22 });
+		const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+		bodyMesh.position.y = 0.5;
+		enemyGroup.add(bodyMesh);
 
-		// Create a halo/aura around the enemy
-		const auraGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-		const auraMaterial = new THREE.MeshBasicMaterial({
-			color: 0xff3333,
-			transparent: true,
-			opacity: 0.3,
-			side: THREE.BackSide
-		});
-		const aura = new THREE.Mesh(auraGeometry, auraMaterial);
-		aura.position.y = 0.4;
-		group.add(aura);
+		// Spikes - make it look more aggressive
+		const spikeGeometry = new THREE.ConeGeometry(0.2, 0.4, 4);
+		const spikeMaterial = new THREE.MeshLambertMaterial({ color: 0x118811 });
 
-		// Add sharp spikes on the enemy's body
-		const spikeCount = 4;
-		for (let i = 0; i < spikeCount; i++) {
-			const angle = (i / spikeCount) * Math.PI * 2;
-			const spikeGeometry = new THREE.ConeGeometry(0.08, 0.5, 4);
-			const spikeMaterial = new THREE.MeshStandardMaterial({
-				color: 0xff6666,
-				emissive: 0xff3333,
-				emissiveIntensity: 0.5
-			});
-
+		// Add spikes around the body
+		for (let i = 0; i < 4; i++) {
 			const spike = new THREE.Mesh(spikeGeometry, spikeMaterial);
-			// Position around the body
-			spike.position.set(Math.cos(angle) * 0.3, 0.4, Math.sin(angle) * 0.3);
-			// Rotate to point outward
-			spike.rotation.z = Math.PI / 2;
-			spike.rotation.y = -angle;
-
-			group.add(spike);
+			spike.position.set(
+				Math.cos((i / 4) * Math.PI * 2) * 0.7,
+				0.5,
+				Math.sin((i / 4) * Math.PI * 2) * 0.7
+			);
+			spike.rotation.x = Math.PI / 2;
+			spike.rotation.z = (i / 4) * Math.PI * 2;
+			enemyGroup.add(spike);
 		}
 
-		// Add a small red point light for glow effect
-		const light = new THREE.PointLight(0xff0000, 0.5, 2);
-		light.position.set(0, 0.4, 0);
-		group.add(light);
-
-		return group;
+		return enemyGroup;
 	}
 
-	protected updateAttack(delta: number): void {
-		// Reduce cooldown timer
+	public updateAttack(delta: number): void {
+		// Decrement attack cooldown
 		if (this.attackCooldown > 0) {
 			this.attackCooldown -= delta;
 		}
 
-		// Check if in range and cooldown is finished
+		// Calculate distance to player
 		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
+
+		// Attack if in range and cooldown is ready
 		if (distanceToPlayer <= this.attackRange && this.attackCooldown <= 0) {
-			// Attack the player - increased damage based on wave
-			const baseDamage = 2; // Increased from 1
-			const waveDamageMultiplier = 1 + (this.waveNumber - 1) * 0.15; // 15% more damage per wave
-			const finalDamage = Math.round(baseDamage * waveDamageMultiplier);
-			this.target.takeDamage(finalDamage);
+			// Apply damage to player (reduced from 3 to 2)
+			this.target.takeDamage(2);
 
-			// Reset cooldown
-			this.attackCooldown = 1.0; // 1 second between attacks
-
-			// Visual feedback for attack
+			// Show attack animation
 			this.showAttackAnimation();
+
+			// Reset attack cooldown (1 second)
+			this.attackCooldown = 1.0;
 		}
 	}
 
 	private showAttackAnimation(): void {
-		// Scale up and down quickly to show attack
+		// Simple attack animation - scale up and down quickly
 		const originalScale = this.mesh.scale.clone();
+		const scaleFactor = 1.3;
 
 		// Scale up
-		this.mesh.scale.set(1.3, 1.3, 1.3);
+		this.mesh.scale.set(
+			originalScale.x * scaleFactor,
+			originalScale.y * scaleFactor,
+			originalScale.z * scaleFactor
+		);
 
-		// After a short delay, scale back down
+		// Scale back down after a short delay
 		setTimeout(() => {
 			if (!this.isDead) {
 				this.mesh.scale.copy(originalScale);
 			}
-		}, 150);
+		}, 100);
+	}
+}
+
+export class SplittingMeleeEnemy extends Enemy {
+	private attackCooldown: number = 0;
+	private readonly attackRange: number = 1.2;
+	private hasSplit: boolean = false;
+
+	constructor(
+		scene: THREE.Scene,
+		position: THREE.Vector3,
+		target: PlayerCharacter,
+		waveNumber: number = 1
+	) {
+		// Stronger than regular melee enemies but reduced stats
+		super(scene, position, target, EnemyType.SPLITTING_MELEE, 2.8, 30, waveNumber);
+		this.healthDropChance = 0.2; // Higher chance to drop health
+		this.collisionRadius = 0.7; // Slightly larger collision
+	}
+
+	protected createMesh(): THREE.Group {
+		// Create a darker green cube with red spikes for splitting melee enemies
+		const enemyGroup = new THREE.Group();
+
+		// Body - darker green
+		const bodyGeometry = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+		const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x228822 });
+		const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+		bodyMesh.position.y = 0.6;
+		enemyGroup.add(bodyMesh);
+
+		// Spikes - red
+		const spikeGeometry = new THREE.ConeGeometry(0.25, 0.5, 4);
+		const spikeMaterial = new THREE.MeshLambertMaterial({ color: 0xcc3322 });
+
+		// Add spikes around the body
+		for (let i = 0; i < 6; i++) {
+			const spike = new THREE.Mesh(spikeGeometry, spikeMaterial);
+			spike.position.set(
+				Math.cos((i / 6) * Math.PI * 2) * 0.8,
+				0.6,
+				Math.sin((i / 6) * Math.PI * 2) * 0.8
+			);
+			spike.rotation.x = Math.PI / 2;
+			spike.rotation.z = (i / 6) * Math.PI * 2;
+			enemyGroup.add(spike);
+		}
+
+		return enemyGroup;
+	}
+
+	public updateAttack(delta: number): void {
+		// Decrement attack cooldown
+		if (this.attackCooldown > 0) {
+			this.attackCooldown -= delta;
+		}
+
+		// Calculate distance to player
+		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
+
+		// Attack if in range and cooldown is ready
+		if (distanceToPlayer <= this.attackRange && this.attackCooldown <= 0) {
+			// Apply damage to player - reduced from 4 to 3
+			this.target.takeDamage(3);
+
+			// Show attack animation
+			this.showAttackAnimation();
+
+			// Reset attack cooldown (increased from 0.9 to 1.2 seconds)
+			this.attackCooldown = 1.2;
+		}
+	}
+
+	private showAttackAnimation(): void {
+		// Attack animation - pulse and glow
+		const originalScale = this.mesh.scale.clone();
+		const scaleFactor = 1.4;
+
+		// Scale up
+		this.mesh.scale.set(
+			originalScale.x * scaleFactor,
+			originalScale.y * scaleFactor,
+			originalScale.z * scaleFactor
+		);
+
+		// Scale back down after a short delay
+		setTimeout(() => {
+			if (!this.isDead) {
+				this.mesh.scale.copy(originalScale);
+			}
+		}, 120);
+	}
+
+	// Override the die method to spawn two regular melee enemies
+	public die(): void {
+		// Only split once (to prevent infinite splitting if the spawned enemies also split)
+		if (!this.hasSplit) {
+			this.hasSplit = true;
+
+			// Spawn two regular melee enemies at this location
+			const position = this.mesh.position.clone();
+			const enemyManager = EnemyManager.getInstance();
+
+			// Create slight offset positions
+			const offset1 = new THREE.Vector3(0.5, 0, 0.5);
+			const offset2 = new THREE.Vector3(-0.5, 0, -0.5);
+
+			// Spawn the two melee enemies with half the health of this enemy
+			const enemy1 = new MeleeEnemy(
+				this.scene,
+				position.clone().add(offset1),
+				this.target,
+				this.waveNumber
+			);
+			const enemy2 = new MeleeEnemy(
+				this.scene,
+				position.clone().add(offset2),
+				this.target,
+				this.waveNumber
+			);
+
+			// Set lower health for the spawned enemies (75% damage instead of 50%)
+			enemy1.takeDamage(enemy1.getMaxHealth() * 0.75);
+			enemy2.takeDamage(enemy2.getMaxHealth() * 0.75);
+
+			// Add them to the enemy manager
+			enemyManager.addEnemy(enemy1);
+			enemyManager.addEnemy(enemy2);
+
+			// Visual effect for splitting
+			this.createSplitEffect();
+		}
+
+		// Call the parent die method to handle standard death logic
+		super.die();
+	}
+
+	private createSplitEffect(): void {
+		// Create a visual effect when the enemy splits
+		const ringGeometry = new THREE.RingGeometry(0, 2, 32);
+		ringGeometry.rotateX(Math.PI / 2);
+
+		const ringMaterial = new THREE.MeshBasicMaterial({
+			color: 0x22ff22,
+			transparent: true,
+			opacity: 0.7,
+			side: THREE.DoubleSide
+		});
+
+		const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring.position.copy(this.mesh.position);
+		ring.position.y = 0.1;
+		this.scene.add(ring);
+
+		// Animate the split effect
+		const startTime = Date.now();
+		const animate = () => {
+			const elapsed = (Date.now() - startTime) / 1000;
+			const scale = 1 + elapsed * 3;
+
+			if (elapsed < 0.5) {
+				ring.scale.set(scale, scale, scale);
+				ring.material.opacity = 0.7 * (1 - elapsed * 2);
+				requestAnimationFrame(animate);
+			} else {
+				this.scene.remove(ring);
+			}
+		};
+
+		animate();
 	}
 }
 
 export class RangedEnemy extends Enemy {
-	private projectiles: THREE.Mesh[] = [];
 	private shootCooldown: number = 0;
 	private readonly preferredDistance: number = 8; // Distance they try to maintain from player
 	private readonly shootRange: number = 12; // Max range they can shoot from
+	private projectilePool: ProjectilePool;
+	private debug: boolean = false; // Debug logs disabled in production
+	private projectiles: THREE.Mesh[] = []; // Direct array of active projectiles
 
 	constructor(
 		scene: THREE.Scene,
@@ -408,89 +564,38 @@ export class RangedEnemy extends Enemy {
 		super(scene, position, target, EnemyType.RANGED, 1.4 + Math.random() * 0.3, 2, waveNumber);
 		this.healthDropChance = 0.2; // 20% chance to drop health
 		this.collisionRadius = 0.55; // Slightly smaller collision for ranged enemies
+
+		// Get the projectile pool instance - crucial for projectile management
+		this.projectilePool = ProjectilePool.getInstance(scene);
+
+		// Removed debug logging for projectile pool initialization
 	}
 
 	protected createMesh(): THREE.Group {
 		const group = new THREE.Group();
 
-		// Enemy body - cosmic energy sphere
-		const bodyGeometry = new THREE.SphereGeometry(0.35, 16, 16);
-		const bodyMaterial = new THREE.MeshStandardMaterial({
-			color: 0x9933ff,
-			emissive: 0x6600cc,
-			emissiveIntensity: 0.8,
-			metalness: 0.9,
-			roughness: 0.2,
+		// Simplified enemy body with high-contrast colors for visibility
+		const bodyGeometry = new THREE.SphereGeometry(0.35, 8, 8);
+		const bodyMaterial = new THREE.MeshBasicMaterial({
+			color: 0xff00ff, // Bright magenta for better visibility
 			transparent: true,
-			opacity: 0.9
+			opacity: 1.0 // Full opacity for better visibility
 		});
 		const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
 		body.position.y = 0.35;
-		body.castShadow = true;
 		group.add(body);
 
-		// Add energy rings around the body
-		const ringGeometry = new THREE.TorusGeometry(0.5, 0.04, 8, 24);
-		const ringMaterial = new THREE.MeshStandardMaterial({
-			color: 0xcc66ff,
-			emissive: 0xaa33ff,
-			emissiveIntensity: 0.7,
+		// Single ring for visual distinction
+		const ringGeometry = new THREE.TorusGeometry(0.5, 0.04, 4, 16);
+		const ringMaterial = new THREE.MeshBasicMaterial({
+			color: 0xffff00, // Yellow for contrast
 			transparent: true,
-			opacity: 0.7
+			opacity: 0.9
 		});
 
-		// Create three rings in different orientations
-		const ring1 = new THREE.Mesh(ringGeometry, ringMaterial);
-		ring1.position.y = 0.35;
-		group.add(ring1);
-
-		const ring2 = new THREE.Mesh(ringGeometry, ringMaterial);
-		ring2.rotation.x = Math.PI / 2;
-		ring2.position.y = 0.35;
-		group.add(ring2);
-
-		const ring3 = new THREE.Mesh(ringGeometry, ringMaterial);
-		ring3.rotation.z = Math.PI / 2;
-		ring3.position.y = 0.35;
-		group.add(ring3);
-
-		// Add small energy sparks around the enemy
-		for (let i = 0; i < 5; i++) {
-			const sparkGeometry = new THREE.SphereGeometry(0.06, 8, 8);
-			const sparkMaterial = new THREE.MeshBasicMaterial({
-				color: 0xcc66ff,
-				transparent: true,
-				opacity: 0.9
-			});
-
-			const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
-			// Position randomly around the body
-			const angle = Math.random() * Math.PI * 2;
-			const radius = 0.4 + Math.random() * 0.3;
-			spark.position.set(
-				Math.cos(angle) * radius,
-				0.35 + (Math.random() * 0.3 - 0.15),
-				Math.sin(angle) * radius
-			);
-
-			// Store animation data
-			spark.userData.angle = angle;
-			spark.userData.radius = radius;
-			spark.userData.speed = 1 + Math.random() * 2;
-			spark.userData.offset = Math.random() * Math.PI * 2;
-
-			group.add(spark);
-
-			// Add a small point light for each spark
-			const sparkLight = new THREE.PointLight(0xcc66ff, 0.3, 1);
-			sparkLight.position.copy(spark.position);
-			spark.add(sparkLight);
-		}
-
-		// Add a purple point light for overall glow
-		const light = new THREE.PointLight(0x9933ff, 0.7, 3);
-		light.position.set(0, 0.35, 0);
-		group.add(light);
+		const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring.position.y = 0.35;
+		group.add(ring);
 
 		return group;
 	}
@@ -531,8 +636,298 @@ export class RangedEnemy extends Enemy {
 		const angleDiff = ((angle - currentAngle + Math.PI) % (Math.PI * 2)) - Math.PI;
 		this.mesh.rotation.y += angleDiff * 0.2;
 
-		// Update projectile positions
+		// Update shoot cooldown
+		if (this.shootCooldown > 0) {
+			this.shootCooldown -= delta;
+		}
+
+		// Check if in range and cooldown is finished
+		if (distanceToPlayer <= this.shootRange && this.shootCooldown <= 0) {
+			this.shoot();
+			this.shootCooldown = 2.0; // Reduced from 3.0 to 2.0 seconds for more frequent shots
+		}
+	}
+
+	/**
+	 * Create and fire a projectile at the player
+	 */
+	private shoot(): void {
+		// Calculate damage based on wave number
+		const baseDamage = 3;
+		const waveDamageMultiplier = 1 + (this.waveNumber - 1) * 0.15;
+		const finalDamage = Math.round(baseDamage * waveDamageMultiplier);
+
+		// Get accurate player position
+		const playerPosition = this.target.getPosition().clone();
+		const enemyPosition = this.mesh.position.clone();
+
+		// Calculate direction vector ensuring it's valid and normalized
+		const directionToPlayer = new THREE.Vector3();
+		directionToPlayer.subVectors(playerPosition, enemyPosition);
+
+		// Check if direction vector is too small (player very close or at same position)
+		if (directionToPlayer.lengthSq() < 0.001) {
+			// Use a default direction if too close
+			directionToPlayer.set(1, 0, 0);
+		}
+
+		// Ensure direction is normalized
+		directionToPlayer.normalize();
+
+		// Calculate projectile start position (slightly in front of the enemy)
+		const offset = directionToPlayer.clone().multiplyScalar(0.8);
+		const position = enemyPosition.clone().add(offset);
+		position.y = 0.5; // Set consistent height
+
+		// Create projectile with a smaller size
+		const projectileGeometry = new THREE.SphereGeometry(0.25, 8, 8); // Reduced from 0.4 to 0.25
+		const projectileMaterial = new THREE.MeshBasicMaterial({
+			color: 0xff0000, // Bright red
+			transparent: true,
+			opacity: 0.8
+		});
+
+		// Create the projectile mesh
+		const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
+		projectile.position.copy(position);
+
+		// Add small point light to make it glow
+		const light = new THREE.PointLight(0xff0000, 0.7, 2);
+		projectile.add(light);
+
+		// Store projectile data directly on the projectile object
+		projectile.userData = {
+			direction: directionToPlayer.clone(),
+			speed: 15,
+			damage: finalDamage,
+			lifetime: 3,
+			timeLived: 0,
+			active: true
+		};
+
+		// Add to scene and our tracking array
+		this.scene.add(projectile);
+		this.projectiles.push(projectile);
+
+		// Create a visual flash effect at the enemy when shooting (smaller)
+		const flashGeometry = new THREE.SphereGeometry(0.4, 8, 8); // Reduced from 0.5 to 0.4
+		const flashMaterial = new THREE.MeshBasicMaterial({
+			color: 0xff5500,
+			transparent: true,
+			opacity: 0.7
+		});
+		const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+		flash.position.copy(position);
+		this.scene.add(flash);
+
+		// Animate and remove the flash effect
+		const startTime = performance.now();
+		const animateFlash = () => {
+			const elapsed = (performance.now() - startTime) / 1000;
+			if (elapsed < 0.2) {
+				flash.scale.set(1 - elapsed * 4, 1 - elapsed * 4, 1 - elapsed * 4);
+				flashMaterial.opacity = 0.7 * (1 - elapsed * 5);
+				requestAnimationFrame(animateFlash);
+			} else {
+				this.scene.remove(flash);
+				flashMaterial.dispose();
+				flashGeometry.dispose();
+			}
+		};
+		requestAnimationFrame(animateFlash);
+	}
+
+	/**
+	 * Clean up resources when enemy is removed
+	 */
+	public cleanup(): void {
+		// Clean up all projectiles
+		for (const projectile of this.projectiles) {
+			this.scene.remove(projectile);
+			// Clean up projectile resources if any
+			if (projectile.material) {
+				if (Array.isArray(projectile.material)) {
+					projectile.material.forEach((m) => m.dispose());
+				} else {
+					projectile.material.dispose();
+				}
+			}
+			if (projectile.geometry) {
+				projectile.geometry.dispose();
+			}
+		}
+		this.projectiles = [];
+
+		// Call parent cleanup
+		super.cleanup();
+	}
+
+	/**
+	 * Handle enemy death
+	 */
+	public die(): void {
+		super.die();
+		// No need to manually clean up projectiles as the pool handles them
+	}
+
+	/**
+	 * Update enemy state each frame
+	 */
+	public update(delta: number): void {
+		if (this.isDead) return;
+
+		super.update(delta);
+
+		// Update projectiles
 		this.updateProjectiles(delta);
+
+		// Animate the ring for visual effect
+		if (this.mesh.children.length > 1) {
+			const ring = this.mesh.children[1] as THREE.Mesh;
+			ring.rotation.z += delta * 1.5; // Increased rotation speed for more visual interest
+			ring.rotation.x += delta * 0.5; // Added secondary rotation axis
+		}
+	}
+
+	/**
+	 * Update all projectiles fired by this enemy
+	 */
+	private updateProjectiles(delta: number): void {
+		// Handle all projectiles in our array
+		for (let i = this.projectiles.length - 1; i >= 0; i--) {
+			const projectile = this.projectiles[i];
+			const data = projectile.userData;
+
+			// Skip if somehow invalid
+			if (!data || !data.active) {
+				this.projectiles.splice(i, 1);
+				this.scene.remove(projectile);
+				continue;
+			}
+
+			// Move projectile forward based on direction and speed
+			projectile.position.x += data.direction.x * data.speed * delta;
+			projectile.position.z += data.direction.z * data.speed * delta;
+
+			// Add subtle bobbing effect
+			projectile.position.y = 0.5 + Math.sin(data.timeLived * 5) * 0.1;
+
+			// Update lifetime
+			data.timeLived += delta;
+
+			// Check for collision with player
+			const distanceToPlayer = projectile.position.distanceTo(this.target.getPosition());
+			if (distanceToPlayer < 0.8) {
+				// Player collision radius
+				// Apply damage to player
+				this.target.takeDamage(data.damage);
+
+				// Remove this projectile
+				this.scene.remove(projectile);
+				this.projectiles.splice(i, 1);
+				continue;
+			}
+
+			// Remove if lifetime is up
+			if (data.timeLived >= data.lifetime) {
+				this.scene.remove(projectile);
+				this.projectiles.splice(i, 1);
+			}
+		}
+	}
+}
+
+export class AoeRangedEnemy extends Enemy {
+	private shootCooldown: number = 0;
+	private readonly preferredDistance: number = 10; // Stays further away than regular ranged
+	private readonly shootRange: number = 15; // Longer range than regular ranged
+	private projectilePool: ProjectilePool;
+	private projectiles: THREE.Mesh[] = [];
+	private aoePools: Array<{ mesh: THREE.Mesh; timeRemaining: number }> = [];
+	private readonly aoePoolDuration: number = 2; // Seconds before pool disappears
+
+	constructor(
+		scene: THREE.Scene,
+		position: THREE.Vector3,
+		target: PlayerCharacter,
+		waveNumber: number = 1
+	) {
+		super(scene, position, target, EnemyType.AOE_RANGED, 2.5, 25, waveNumber);
+		this.healthDropChance = 0.25; // Higher chance to drop health
+		this.collisionRadius = 0.6;
+		this.projectilePool = ProjectilePool.getInstance(scene);
+	}
+
+	protected createMesh(): THREE.Group {
+		const enemyGroup = new THREE.Group();
+
+		// Body - purple sphere
+		const bodyGeometry = new THREE.SphereGeometry(0.6, 16, 16);
+		const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x6600cc });
+		const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+		bodyMesh.position.y = 0.6;
+		enemyGroup.add(bodyMesh);
+
+		// Outer ring - golden
+		const ringGeometry = new THREE.TorusGeometry(0.8, 0.08, 8, 24);
+		const ringMaterial = new THREE.MeshLambertMaterial({ color: 0xffaa00 });
+		const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring.position.y = 0.6;
+		ring.rotation.x = Math.PI / 2;
+		enemyGroup.add(ring);
+
+		// Second ring at different angle for cool effect
+		const ring2 = new THREE.Mesh(ringGeometry, ringMaterial);
+		ring2.position.y = 0.6;
+		ring2.rotation.x = Math.PI / 4;
+		ring2.rotation.z = Math.PI / 4;
+		enemyGroup.add(ring2);
+
+		return enemyGroup;
+	}
+
+	public update(delta: number): void {
+		super.update(delta);
+
+		// Update the AoE pools duration
+		this.updateAoePools(delta);
+
+		// Update the projectiles
+		this.updateProjectiles(delta);
+	}
+
+	protected updateMovement(delta: number): void {
+		// Calculate direction and distance to player
+		this.moveDirection.subVectors(this.target.getPosition(), this.mesh.position);
+		const distanceToPlayer = this.moveDirection.length();
+		this.moveDirection.normalize();
+
+		// Set velocity based on preferred distance
+		if (distanceToPlayer < this.preferredDistance - 1.5) {
+			// Too close to player, move away
+			this.velocity.copy(this.moveDirection).multiplyScalar(-this.speed * delta);
+		} else if (distanceToPlayer > this.preferredDistance + 1.5) {
+			// Too far from player, move closer
+			this.velocity.copy(this.moveDirection).multiplyScalar(this.speed * delta);
+		} else {
+			// At good distance, strafe sideways
+			const strafeDir = new THREE.Vector3(-this.moveDirection.z, 0, this.moveDirection.x);
+			strafeDir.multiplyScalar(Math.sin(Date.now() * 0.001) * this.speed * delta);
+			this.velocity.copy(strafeDir);
+		}
+
+		// Apply collision avoidance
+		this.avoidOtherEnemies(delta);
+
+		// Apply collision with player
+		this.handlePlayerCollision(delta);
+
+		// Apply final velocity
+		this.mesh.position.add(this.velocity);
+
+		// Face player
+		const angle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
+		this.mesh.rotation.y = angle;
 	}
 
 	protected updateAttack(delta: number): void {
@@ -541,76 +936,112 @@ export class RangedEnemy extends Enemy {
 			this.shootCooldown -= delta;
 		}
 
-		// Check if in range and cooldown is finished
+		// Check if we can shoot
 		const distanceToPlayer = this.mesh.position.distanceTo(this.target.getPosition());
 		if (distanceToPlayer <= this.shootRange && this.shootCooldown <= 0) {
-			this.shoot();
-			this.shootCooldown = 3.0; // 3 seconds between shots
+			this.shootAoeProjectile();
+			this.shootCooldown = 2.0; // Longer cooldown due to its power
 		}
 	}
 
-	private shoot(): void {
+	private shootAoeProjectile(): void {
+		// Direction to player
+		const direction = new THREE.Vector3()
+			.subVectors(this.target.getPosition(), this.mesh.position)
+			.normalize();
+
 		// Create projectile
-		const projectileGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+		const projectileGeometry = new THREE.SphereGeometry(0.4, 8, 8);
 		const projectileMaterial = new THREE.MeshBasicMaterial({
-			color: 0xff00ff,
+			color: 0xaa00ff,
 			transparent: true,
 			opacity: 0.8
 		});
 
 		const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
 
-		// Set initial position (slightly in front of the enemy)
-		const offset = this.moveDirection.clone().multiplyScalar(0.8);
+		// Set initial position
+		const offset = direction.clone().multiplyScalar(1.0);
 		projectile.position.copy(this.mesh.position.clone().add(offset));
-		projectile.position.y = 0.5; // Match height with player
+		projectile.position.y = 0.6;
 
-		// Add to scene and list
+		// Add to scene
 		this.scene.add(projectile);
 
-		// Store direction and other properties with the projectile
-		// Increased damage based on wave
-		const baseDamage = 2; // Increased from 1
-		const waveDamageMultiplier = 1 + (this.waveNumber - 1) * 0.1; // 10% more damage per wave
-		const finalDamage = Math.round(baseDamage * waveDamageMultiplier);
+		// Add light to projectile for glow effect
+		const light = new THREE.PointLight(0xaa00ff, 1, 3);
+		light.position.set(0, 0, 0);
+		projectile.add(light);
 
-		const userData = {
-			direction: this.moveDirection.clone(),
-			speed: 5, // Faster than the enemy
-			damage: finalDamage,
-			lifetime: 4, // Seconds before disappearing
-			timeLived: 0
+		// Store projectile data
+		projectile.userData = {
+			direction: direction,
+			speed: 6, // Slightly slower than before
+			damage: 2, // Reduced from 3 to 2
+			lifetime: 3, // Reduced lifetime
+			timeLived: 0,
+			isAoe: true
 		};
 
-		// Store the data on the projectile's userData
-		projectile.userData = userData;
-
-		// Add to the list of active projectiles
 		this.projectiles.push(projectile);
+
+		// Visual effect for shooting
+		this.createShootEffect();
+	}
+
+	private createShootEffect(): void {
+		// Flash effect for shooting
+		const flashGeometry = new THREE.SphereGeometry(0.7, 8, 8);
+		const flashMaterial = new THREE.MeshBasicMaterial({
+			color: 0xaa00ff,
+			transparent: true,
+			opacity: 0.7
+		});
+
+		const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+		flash.position.copy(this.mesh.position);
+		flash.position.y = 0.6;
+		this.scene.add(flash);
+
+		// Animate the flash
+		const startTime = Date.now();
+		const animate = () => {
+			const elapsed = (Date.now() - startTime) / 1000;
+			const scale = 1 + elapsed * 2;
+
+			if (elapsed < 0.3) {
+				flash.scale.set(scale, scale, scale);
+				flash.material.opacity = 0.7 * (1 - elapsed * 3.3);
+				requestAnimationFrame(animate);
+			} else {
+				this.scene.remove(flash);
+			}
+		};
+
+		animate();
 	}
 
 	private updateProjectiles(delta: number): void {
-		// Process each projectile
+		// Update all projectiles
 		for (let i = this.projectiles.length - 1; i >= 0; i--) {
 			const projectile = this.projectiles[i];
 			const userData = projectile.userData;
 
-			// Move the projectile
+			// Move projectile
 			projectile.position.x += userData.direction.x * userData.speed * delta;
 			projectile.position.z += userData.direction.z * userData.speed * delta;
-
-			// Add a slight bobbing effect
-			projectile.position.y = 0.5 + Math.sin(userData.timeLived * 5) * 0.1;
+			projectile.position.y = 0.6 + Math.sin(userData.timeLived * 5) * 0.1;
 
 			// Update lifetime
 			userData.timeLived += delta;
 
 			// Check collision with player
 			const distanceToPlayer = projectile.position.distanceTo(this.target.getPosition());
-			if (distanceToPlayer < 0.7) {
-				// Collision radius
-				// Damage player
+			if (distanceToPlayer < 0.8) {
 				this.target.takeDamage(userData.damage);
+
+				// Create AoE pool on hit
+				this.createAoePool(projectile.position.clone());
 
 				// Remove projectile
 				this.scene.remove(projectile);
@@ -618,15 +1049,75 @@ export class RangedEnemy extends Enemy {
 				continue;
 			}
 
-			// Check if projectile has lived its full lifetime
+			// Check lifetime or create pool if it hits the ground
 			if (userData.timeLived >= userData.lifetime) {
+				// Create AoE pool if it expires
+				this.createAoePool(projectile.position.clone());
+
+				// Remove projectile
 				this.scene.remove(projectile);
 				this.projectiles.splice(i, 1);
 			}
 		}
 	}
 
+	private createAoePool(position: THREE.Vector3): void {
+		// Create an AoE pool on the ground
+		position.y = 0.05; // Just above the ground
+
+		const poolGeometry = new THREE.CircleGeometry(1.5, 32); // Reduced from 2 to 1.5
+		poolGeometry.rotateX(-Math.PI / 2); // Flat on the ground
+
+		const poolMaterial = new THREE.MeshBasicMaterial({
+			color: 0xaa00ff,
+			transparent: true,
+			opacity: 0.5,
+			side: THREE.DoubleSide
+		});
+
+		const poolMesh = new THREE.Mesh(poolGeometry, poolMaterial);
+		poolMesh.position.copy(position);
+		this.scene.add(poolMesh);
+
+		// Add the pool to the collection
+		this.aoePools.push({
+			mesh: poolMesh,
+			timeRemaining: this.aoePoolDuration
+		});
+	}
+
+	private updateAoePools(delta: number): void {
+		// Check for player in pools and update pool durations
+		for (let i = this.aoePools.length - 1; i >= 0; i--) {
+			const pool = this.aoePools[i];
+
+			// Reduce time remaining
+			pool.timeRemaining -= delta;
+
+			// Apply visual fade out
+			const material = pool.mesh.material as THREE.MeshBasicMaterial;
+			material.opacity = 0.5 * (pool.timeRemaining / this.aoePoolDuration);
+
+			// Check if player is in the pool
+			const distanceToPlayer = pool.mesh.position.distanceTo(this.target.getPosition());
+			if (distanceToPlayer < 1.5) {
+				// Reduced from 2 to 1.5
+				// Apply damage over time - once per second
+				if (Math.floor(pool.timeRemaining) < Math.floor(pool.timeRemaining + delta)) {
+					this.target.takeDamage(1); // Reduced from 2 to 1
+				}
+			}
+
+			// Remove expired pools
+			if (pool.timeRemaining <= 0) {
+				this.scene.remove(pool.mesh);
+				this.aoePools.splice(i, 1);
+			}
+		}
+	}
+
 	public cleanup(): void {
+		// Call parent cleanup
 		super.cleanup();
 
 		// Remove all projectiles
@@ -634,49 +1125,17 @@ export class RangedEnemy extends Enemy {
 			this.scene.remove(projectile);
 		}
 		this.projectiles = [];
+
+		// Remove all AoE pools
+		for (const pool of this.aoePools) {
+			this.scene.remove(pool.mesh);
+		}
+		this.aoePools = [];
 	}
 
 	public die(): void {
+		// Call the parent die method
 		super.die();
-
-		// Clean up projectiles when enemy dies
-		this.cleanup();
-	}
-
-	public update(delta: number): void {
-		if (this.isDead) return;
-
-		super.update(delta);
-
-		// Animate rings rotation
-		const rings = [
-			this.mesh.children[1] as THREE.Mesh,
-			this.mesh.children[2] as THREE.Mesh,
-			this.mesh.children[3] as THREE.Mesh
-		];
-
-		rings[0].rotation.z += delta * 0.8;
-		rings[1].rotation.y += delta * 0.6;
-		rings[2].rotation.x += delta * 0.7;
-
-		// Animate energy sparks
-		for (let i = 4; i < this.mesh.children.length - 1; i++) {
-			const spark = this.mesh.children[i] as THREE.Mesh;
-			if (spark.userData.speed) {
-				spark.userData.angle += delta * spark.userData.speed;
-
-				// Update position with a spiraling motion
-				spark.position.x = Math.cos(spark.userData.angle) * spark.userData.radius;
-				spark.position.z = Math.sin(spark.userData.angle) * spark.userData.radius;
-
-				// Add bobbing motion
-				spark.position.y = 0.35 + Math.sin(spark.userData.angle + spark.userData.offset) * 0.15;
-
-				// Pulsate size slightly
-				const scale = 0.8 + Math.sin(spark.userData.angle * 3) * 0.2;
-				spark.scale.set(scale, scale, scale);
-			}
-		}
 	}
 }
 
@@ -701,11 +1160,11 @@ export class BossEnemy extends Enemy {
 	) {
 		// Boss gets much stronger at wave 10
 		// Base health is higher, and we apply an additional multiplier for the boss
-		const bossMultiplier = 2.5; // Special boss strength multiplier
-		super(scene, position, target, EnemyType.BOSS, 1.3, 50, waveNumber);
+		const bossMultiplier = 5.0; // Greatly increased from 2.5 to 5.0 for significantly stronger boss
+		super(scene, position, target, EnemyType.BOSS, 1.3, 100, waveNumber); // Base health increased from 50 to 100
 
 		// Override health calculation to make boss significantly stronger
-		this.health = 50 * (1 + (waveNumber - 1) * 0.2) * bossMultiplier;
+		this.health = 100 * (1 + (waveNumber - 1) * 0.3) * bossMultiplier; // Increased scaling per wave from 0.2 to 0.3
 		this.maxHealth = this.health;
 
 		this.isBoss = true;
@@ -1251,6 +1710,6 @@ export class BossEnemy extends Enemy {
 
 	public die(): void {
 		super.die();
-		this.cleanup();
+		// No need to manually call cleanup as super.die() will call cleanup()
 	}
 }

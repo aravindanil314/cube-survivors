@@ -16,14 +16,26 @@ export const DEBUG_CONFIG = {
 
 // Performance settings
 export const PERFORMANCE_CONFIG = {
+	// Resource limits
 	maxEnemies: 100,
 	maxProjectiles: 200,
 	maxCollectibles: 200,
 	maxParticles: 500,
+	maxVisibleEnemies: 100, // Maximum number of enemies rendered at once
+
+	// Performance settings
 	cullDistance: 30, // Distance at which objects are removed/disabled
 	spatialGridCellSize: 5, // Size of spatial grid cells
 	dynamicLOD: true, // Enable level of detail adjustments
-	shadowsEnabled: true
+	shadowsEnabled: true,
+
+	// Quality settings (0=low, 1=medium, 2=high)
+	currentQualityLevel: 1, // Default to medium quality
+	particleDensity: 0.6, // Multiplier for particle effects (0.3 to 1.0)
+
+	// Performance monitoring
+	targetFPS: 60,
+	performanceCheckInterval: 1.0 // seconds
 };
 
 // Player settings

@@ -9,7 +9,7 @@ export class Weapon {
 	private cooldownTime: number = 0.5; // seconds between shots
 	private cooldownTimer: number = 0;
 	private projectileSpeed: number = 10;
-	private projectileDamage: number = 1;
+	private projectileDamage: number = 100;
 	private projectileCount: number = 1;
 	private spreadAngle: number = 0;
 	private level: number = 1;
@@ -170,7 +170,7 @@ export class Weapon {
 		// Use provided level for special upgrades if available
 		if (level !== undefined) {
 			// Special level-based upgrades
-			this.projectileDamage = Math.max(1, level * 0.5);
+			this.projectileDamage = Math.max(100, level * 0.5);
 			this.cooldownTime = Math.max(0.1, 0.5 - level * 0.02);
 			this.projectileCount = Math.min(5, 1 + Math.floor(level / 3));
 			this.spreadAngle = Math.min(Math.PI / 6, (this.projectileCount - 1) * 0.1);

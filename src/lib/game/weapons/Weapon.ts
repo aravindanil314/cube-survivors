@@ -98,7 +98,7 @@ export class Weapon {
 
 		// Default weapon stats
 		this.stats = {
-			damage: 1,
+			damage: 10000,
 			cooldownTime: 0.5,
 			projectileSpeed: 10,
 			projectileCount: 1,
@@ -427,7 +427,7 @@ export class Weapon {
 		// Use provided level for special upgrades if available
 		if (level !== undefined) {
 			// Special level-based upgrades
-			this.stats.damage = Math.max(1, level * 0.5);
+			this.stats.damage = Math.max(1000, level * 0.5);
 			this.stats.cooldownTime = Math.max(0.1, 0.5 - level * 0.02);
 			this.stats.projectileCount = Math.min(5, 1 + Math.floor(level / 3));
 			this.stats.spreadAngle = Math.min(Math.PI / 6, (this.stats.projectileCount - 1) * 0.1);

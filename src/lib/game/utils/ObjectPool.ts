@@ -55,7 +55,7 @@ export class ObjectPool<T> {
 			obj = this.createFn();
 		} else {
 			// We've reached the maximum size and have no available objects
-			console.warn('Object pool maximum size reached. Consider increasing the maximum size.');
+			this.debug.warn('Object pool maximum size reached. Consider increasing the maximum size');
 			return null as unknown as T;
 		}
 
@@ -81,7 +81,8 @@ export class ObjectPool<T> {
 		} else if (!this.available.includes(obj)) {
 			// If the object wasn't active and isn't already in available,
 			// it might be from another pool or manually created
-			console.warn('Returning an object that was not retrieved from this pool');
+			const debug = Debug.getInstance();
+			debug.warn('Returning an object that was not retrieved from this pool');
 			this.available.push(obj);
 		}
 

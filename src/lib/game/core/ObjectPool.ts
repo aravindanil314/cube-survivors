@@ -1,3 +1,5 @@
+import { Debug } from '../utils/Debug';
+
 /**
  * Interface representing statistics for an object pool
  */
@@ -67,7 +69,8 @@ export class ObjectPool<T> {
 		} else {
 			// Check if we've reached the max size
 			if (this.maxSize > 0 && this.activeObjects.size >= this.maxSize) {
-				console.warn(`ObjectPool(${this.type}): Maximum size reached (${this.maxSize})`);
+				const debug = Debug.getInstance();
+				debug.warn(`ObjectPool(${this.type}): Maximum size reached (${this.maxSize})`);
 			}
 
 			// Create new object

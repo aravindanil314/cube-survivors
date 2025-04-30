@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { MeleeEnemy, RangedEnemy, Enemy, BossEnemy } from './Enemy';
+import {
+	MeleeEnemy,
+	RangedEnemy,
+	Enemy,
+	BossEnemy,
+	SplittingMeleeEnemy,
+	AoeRangedEnemy
+} from './Enemy';
 import { PlayerCharacter } from './PlayerCharacter';
 
 export class EnemyManager {
@@ -133,17 +140,50 @@ export class EnemyManager {
 		// Determine enemy type based on wave number
 		let enemy: Enemy;
 
-		if (this.waveNumber < 6) {
-			// Only melee enemies in early waves
+		// Implement the wave-based enemy spawn logic
+		if (this.waveNumber <= 2) {
+			// Waves 1-2: only melee enemies
 			enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
-		} else {
-			// Include ranged enemies from wave 6 and beyond
-			const rangedProbability = 0.25 + (this.waveNumber - 6) * 0.05; // Increases with wave number
-
-			if (Math.random() < rangedProbability) {
+		} else if (this.waveNumber <= 4) {
+			// Waves 3-4: melee and ranged enemies
+			if (Math.random() < 0.5) {
 				enemy = new RangedEnemy(this.scene, position, this.player, this.waveNumber);
 			} else {
 				enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			}
+		} else if (this.waveNumber <= 6) {
+			// Waves 5-6: melee, ranged, and splitting melee enemies
+			const rand = Math.random();
+			if (rand < 0.33) {
+				enemy = new RangedEnemy(this.scene, position, this.player, this.waveNumber);
+			} else if (rand < 0.66) {
+				enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			} else {
+				enemy = new SplittingMeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			}
+		} else if (this.waveNumber <= 9) {
+			// Waves 7-9: melee, ranged, splitting melee, and AOE ranged enemies
+			const rand = Math.random();
+			if (rand < 0.25) {
+				enemy = new RangedEnemy(this.scene, position, this.player, this.waveNumber);
+			} else if (rand < 0.5) {
+				enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			} else if (rand < 0.75) {
+				enemy = new SplittingMeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			} else {
+				enemy = new AoeRangedEnemy(this.scene, position, this.player, this.waveNumber);
+			}
+		} else {
+			// Wave 10: If boss is defeated, spawn all enemy types
+			const rand = Math.random();
+			if (rand < 0.25) {
+				enemy = new RangedEnemy(this.scene, position, this.player, this.waveNumber);
+			} else if (rand < 0.5) {
+				enemy = new MeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			} else if (rand < 0.75) {
+				enemy = new SplittingMeleeEnemy(this.scene, position, this.player, this.waveNumber);
+			} else {
+				enemy = new AoeRangedEnemy(this.scene, position, this.player, this.waveNumber);
 			}
 		}
 
@@ -412,6 +452,10 @@ export class EnemyManager {
 
 	public getWaveNumber(): number {
 		return this.waveNumber;
+	}
+
+	public addEnemy(enemy: Enemy): void {
+		this.enemies.push(enemy);
 	}
 
 	public cleanup(): void {

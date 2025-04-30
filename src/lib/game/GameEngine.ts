@@ -8,6 +8,7 @@ import { Debug } from './utils/Debug';
 import { ResourceManager } from './utils/ResourceManager';
 import { SpatialGrid } from './utils/SpatialGrid';
 import type { SpatialObject } from './utils/SpatialGrid';
+import { ProjectilePool } from './utils/ProjectilePool';
 import { DEBUG_CONFIG, PERFORMANCE_CONFIG, VISUAL_CONFIG, WORLD_CONFIG } from './config';
 
 /**
@@ -36,6 +37,7 @@ export class GameEngine {
 	private collectibleManager!: CollectibleManager;
 	private enemySpatialGrid!: SpatialGrid<SpatialObject>;
 	private collectibleSpatialGrid!: SpatialGrid<SpatialObject>;
+	private projectilePool!: ProjectilePool;
 	private score: number = 0;
 	private debug: Debug;
 	private resources: ResourceManager;
@@ -70,6 +72,10 @@ export class GameEngine {
 		this.scene.background = new THREE.Color(VISUAL_CONFIG.colors.background);
 		this.scene.fog = new THREE.FogExp2(VISUAL_CONFIG.colors.background, 0.02);
 
+		// Store a reference to this GameEngine in the scene's userData
+		// This allows components like ProjectilePool to access the player for damage
+		this.scene.userData.gameEngine = this;
+
 		// Set up camera
 		this.setupCamera();
 
@@ -84,6 +90,12 @@ export class GameEngine {
 
 		// Create player
 		this.player = new PlayerCharacter(this.scene, WORLD_CONFIG.boundarySize);
+
+		// Initialize the projectile pool - this must be done before enemy manager
+		// so that ranged enemies can access it
+		const poolSize = 300; // Adjust based on expected max projectiles
+		this.projectilePool = new ProjectilePool(this.scene, poolSize);
+		this.debug.info(`Initialized projectile pool with size ${poolSize}`);
 
 		// Create game systems
 		this.enemyManager = new EnemyManager(this.scene, this.player, WORLD_CONFIG.boundarySize);
@@ -430,6 +442,9 @@ export class GameEngine {
 		this.enemyManager.update(delta);
 		this.collectibleManager.update(delta);
 
+		// Update all projectiles in the pool
+		this.projectilePool.update(delta, this.player.mesh);
+
 		// Update UI (in a full implementation, there would be a UI manager)
 		this.updateUI();
 
@@ -504,7 +519,7 @@ export class GameEngine {
 	}
 
 	/**
-	 * Check performance and adjust settings
+	 * Check performance and adjust settings dynamically
 	 */
 	private checkPerformance(delta: number): void {
 		// Only check every second
@@ -520,14 +535,64 @@ export class GameEngine {
 			this.fpsBuffer.shift();
 		}
 
-		// Get average FPS - currently unused but would be used to adjust settings
-		// const avgFps = this.fpsBuffer.reduce((a, b) => a + b, 0) / this.fpsBuffer.length;
+		// Get average FPS
+		const avgFps = this.fpsBuffer.reduce((a, b) => a + b, 0) / this.fpsBuffer.length;
 
-		// Adjust settings based on performance - this would normally call adjustSettingsForPerformance
-		// For now, we'll keep this as a stub for later implementation
+		// Target FPS thresholds based on config
+		const lowPerformanceThreshold = PERFORMANCE_CONFIG.targetFPS * 0.67; // ~40 FPS at 60 target
+		const highPerformanceThreshold = PERFORMANCE_CONFIG.targetFPS * 0.92; // ~55 FPS at 60 target
+
+		// Adjust settings based on performance
+		if (avgFps < lowPerformanceThreshold && PERFORMANCE_CONFIG.currentQualityLevel > 0) {
+			// Reduce quality
+			PERFORMANCE_CONFIG.currentQualityLevel--;
+			this.applyQualitySettings(PERFORMANCE_CONFIG.currentQualityLevel);
+			this.debug.info(
+				`Performance optimization: Reduced quality to level ${PERFORMANCE_CONFIG.currentQualityLevel}`
+			);
+		} else if (avgFps > highPerformanceThreshold && PERFORMANCE_CONFIG.currentQualityLevel < 2) {
+			// Increase quality if we have consistent high performance
+			PERFORMANCE_CONFIG.currentQualityLevel++;
+			this.applyQualitySettings(PERFORMANCE_CONFIG.currentQualityLevel);
+			this.debug.info(
+				`Performance optimization: Increased quality to level ${PERFORMANCE_CONFIG.currentQualityLevel}`
+			);
+		}
 
 		// Reset timer
 		this.lastPerformanceCheck = 0;
+	}
+
+	/**
+	 * Apply quality settings based on performance level
+	 */
+	private applyQualitySettings(qualityLevel: number): void {
+		switch (qualityLevel) {
+			case 0: // Low quality
+				// Reduce visual quality for better performance
+				this.renderer.setPixelRatio(1);
+				this.renderer.shadowMap.enabled = false;
+				// Reduce max enemies
+				PERFORMANCE_CONFIG.maxVisibleEnemies = 50;
+				PERFORMANCE_CONFIG.particleDensity = 0.3;
+				break;
+
+			case 1: // Medium quality (default)
+				this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+				this.renderer.shadowMap.enabled = true;
+				this.renderer.shadowMap.type = THREE.PCFShadowMap;
+				PERFORMANCE_CONFIG.maxVisibleEnemies = 100;
+				PERFORMANCE_CONFIG.particleDensity = 0.6;
+				break;
+
+			case 2: // High quality
+				this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+				this.renderer.shadowMap.enabled = true;
+				this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+				PERFORMANCE_CONFIG.maxVisibleEnemies = 150;
+				PERFORMANCE_CONFIG.particleDensity = 1.0;
+				break;
+		}
 	}
 
 	/**
@@ -587,15 +652,35 @@ export class GameEngine {
 		// Start performance measurement
 		this.debug.startFrame();
 
-		// Update game state
-		this.update();
+		// Check if document/tab is visible
+		const isTabActive = !document.hidden;
 
-		// Render scene
-		this.renderer.render(this.scene, this.camera);
+		// Only perform full updates when game is active and tab is in focus
+		if (!this.isPaused && !this.isGameOver && isTabActive) {
+			// Update game state
+			this.update();
+
+			// Render scene at full quality and frame rate
+			this.renderer.render(this.scene, this.camera);
+
+			// Reset the throttled render timer
+			this.lastThrottledRenderTime = 0;
+		} else {
+			// When paused, game over, or tab not focused, render at reduced frequency
+			const now = Date.now();
+			if (!this.lastThrottledRenderTime || now - this.lastThrottledRenderTime > 500) {
+				// Just render the scene without updating game state
+				this.renderer.render(this.scene, this.camera);
+				this.lastThrottledRenderTime = now;
+			}
+		}
 
 		// End performance measurement
 		this.debug.endFrame();
 	}
+
+	// Track the last time we rendered during throttled mode
+	private lastThrottledRenderTime: number = 0;
 
 	/**
 	 * Clean up resources
@@ -608,9 +693,12 @@ export class GameEngine {
 		this.isPaused = true;
 		this.isGameOver = true;
 
-		// Remove event listeners
-		document.removeEventListener('resume-game', () => {});
-		document.removeEventListener('toggle-pause', () => {});
+		// Properly remove event listeners using stored references
+		window.removeEventListener('resize', this.handleResizeListener);
+		document.removeEventListener('resume-game', this.resumeGameListener);
+		document.removeEventListener('toggle-pause', this.togglePauseListener);
+		document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+		this.debug.info('Event listeners removed');
 
 		// Clean up game systems
 		this.enemyManager.cleanup();
@@ -628,12 +716,45 @@ export class GameEngine {
 		this.debug.info('Game cleaned up');
 	}
 
+	// Store event handler references with default initialization to satisfy TypeScript
+	private handleResizeListener: EventListener = () => {};
+	private resumeGameListener: EventListener = () => {};
+	private togglePauseListener: EventListener = () => {};
+	private visibilityChangeListener: EventListener = () => {};
+
 	/**
 	 * Set up event listeners
 	 */
 	private setupEventListeners(): void {
-		// Setup event listeners for the game
-		window.addEventListener('resize', this.handleResize.bind(this));
+		// Initialize event handlers with proper binding
+		this.handleResizeListener = this.handleResize.bind(this);
+
+		// Pause/resume handlers
+		this.resumeGameListener = () => {
+			if (this.isPaused) {
+				this.togglePause();
+			}
+		};
+
+		this.togglePauseListener = () => {
+			this.togglePause();
+		};
+
+		// Handle page visibility changes
+		this.visibilityChangeListener = () => {
+			if (document.hidden && !this.isPaused && !this.isGameOver) {
+				// Auto-pause when tab is not visible
+				this.togglePause();
+			}
+		};
+
+		// Add event listeners
+		window.addEventListener('resize', this.handleResizeListener);
+		document.addEventListener('resume-game', this.resumeGameListener);
+		document.addEventListener('toggle-pause', this.togglePauseListener);
+		document.addEventListener('visibilitychange', this.visibilityChangeListener);
+
+		this.debug.info('Event listeners initialized');
 	}
 
 	/**

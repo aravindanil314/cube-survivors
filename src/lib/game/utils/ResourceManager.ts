@@ -282,7 +282,9 @@ export class ResourceManager {
 	 */
 	public cloneMesh(id: string): THREE.Mesh | null {
 		if (!this.meshes.has(id)) {
-			console.warn(`Mesh with id ${id} not found for cloning`);
+			// Using debug system instead of console.warn
+			const debug = Debug.getInstance();
+			debug.warn(`Mesh with id ${id} not found for cloning`);
 			return null;
 		}
 
